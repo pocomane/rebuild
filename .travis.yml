@@ -1,0 +1,65 @@
+
+# This repository is configured to automatically publish release files, thanks to
+# [Travis-CI](https://travis-ci.com).  To give the right tag to a release, commit
+# and tag informations must be pushed together, e.g.:
+#
+# git commit -a -m 'Changes summary'
+# git tag 0.1_wip
+# git push origin : 0.1_wip
+
+language: c
+
+jobs:
+  include:
+    - stage: test
+      os: linux
+      env: TARGET="linux"
+
+install:
+  - sudo apt-get install curl
+
+cache:
+  directories:
+  - muslcc
+
+deploy:
+  provider: releases
+  api_key: $GITHUB_API_KEY
+  file_glob: true
+  file: "deploy/*"
+  skip_cleanup: true
+  on:
+    branch: main
+
+script:
+  - |
+    set -x
+    if [ \! -e "./muslcc/i686-linux-musl-native/bin/gcc" ] ; then
+      mkdir -p muslcc
+      cd muslcc
+      curl http://musl.cc/i686-linux-musl-native.tgz -o musl.tgz
+      tar -xzf musl.tgz
+      curl http://musl.cc/i686-w64-mingw32-cross.tgz -o musl.tgz
+      tar -xzf musl.tgz
+      curl http://musl.cc/arm-linux-musleabihf-cross.tgz -o musl.tgz
+      tar -xzf musl.tgz
+      echo "using default compiler for mac"
+      rm musl.tgz
+      cd -
+    fi
+    set +x
+  - chmod ugo+x test/runtest.sh
+  - mkdir -p deploy/
+  - ./muslcc/i686-linux-musl-native/bin/gcc -static -O2 -D_POSIX_C_SOURCE=200809L -o rebuild rebuild.c
+  - ./muslcc/i686-linux-musl-native/bin/strip rebuild
+  - tar -zcf "deploy/rebuild_linux.tar.gz" rebuild
+  - RBE="$PWD/rebuild" ./test/runtest.sh
+  - ./muslcc/arm-linux-musleabihf-cross/bin/arm-linux-musleabihf-gcc -static -O2 -D_POSIX_C_SOURCE=200809L -o rebuild rebuild.c
+  - ./muslcc/arm-linux-musleabihf-cross/bin/arm-linux-musleabihf-strip rebuild
+  - tar -zcf "deploy/rebuild_armlinux.tar.gz" rebuild
+  - echo skip RBE="$PWD/rebuild" ./test/runtest.sh
+  - ./muslcc/i686-w64-mingw32-cross/bin/i686-w64-mingw32-gcc -static -O2 -D_WIN32 -o rebuild.exe rebuild.c
+  - ./muslcc/i686-w64-mingw32-cross/bin/i686-w64-mingw32-strip rebuild.exe
+  - zip -r "deploy/rebuild_windows.zip" rebuild.exe
+  - echo skip RBE="$PWD/rebuild" ./test/runtest.sh
+
