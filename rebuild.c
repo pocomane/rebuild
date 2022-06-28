@@ -21,8 +21,17 @@
 
 #define WIP_TARGET_OUTPUT "./target.wip"
 
-#define info(L,F,...) do{if(opt.verbosity>=L)printf("rebuild %s " F, opt.nesting, __VA_ARGS__);fflush(stdout);}while(0)
-#define Fatal() do{info(0,"unhandled error %d at %d - %s\n",errno,__LINE__,strerror(errno));exit(-1);}while(0)
+#define info(L,F,...) do{ \
+  if(L <= 0 || opt.verbosity >= L) {\
+    fprintf(L<0 ? stderr : stdout, "rebuild %s " F, opt.nesting, __VA_ARGS__); \
+    fflush(L<0 ? stderr : stdout); \
+  } \
+}while(0)
+
+#define die(F,...) do{ \
+  info(-1, F, __VA_ARGS__); \
+  exit(-1); \
+}while(0)
 
 #define LID_UT_CAT2(A,B) A ## B
 #define LID_UT_CAT(A,B) LID_UT_CAT2(A,B)
@@ -73,8 +82,9 @@ static int make_parent_directory(const char* path){
     if(!sep) break;
     if (path != sep){
       *(char*)sep = '\0';
-      if (make_directory(path)) Fatal();
+      int result = make_directory(path);
       *(char*)sep = '/';
+      if (result) return result;
     }
     sep += 1;
   }
@@ -98,19 +108,26 @@ static int is_in_db(const char* target, int level){
   return file_exists(path);
 }
 
-static int db_commit(const char* target, int level){
+static int db_commit(const char* target, int level, int report){
   DB_PATH(char* from, target, level+1);
   DB_PATH(char* to, target, level);
   info(7, "commit [%s] <- [%s].\n", to, from);
-  return move_file_os(from, to);
+  int result = move_file_os(from, to);
+  if (report && result) info(-1, "can not move '%s' to '%s'.\n", from, to); // TODO : is this needed ?
+  return result;
 }
 
-static FILE* db_open(const char* target, int level, const char* mode){
+static FILE* db_open(const char* target, int level, const char* mode, int report){
   DB_PATH(char* path, target, level);
-  make_parent_directory(path);
+  FILE* result = NULL;
   errno = 0;
-  info(7, "cursor [%s]\n", path);
-  return fopen(path, mode);
+  if (!make_parent_directory(path)){
+    info(7, "cursor [%s]\n", path);
+    errno = 0;
+    result = fopen(path, mode);
+  }
+  if (report && NULL == result) info(-1, "can not open database '%s' - '%s'.\n", target, strerror(errno)); // TODO : is this needed ?
+  return result;
 }
 
 #undef DB_PATH
@@ -121,7 +138,7 @@ static int is_source_file(const char * path){
   return 1;
 }
 
-static int does_generate_a_cycle(const char* target){
+static void check_dependency_cycle(const char* target){
   size_t len = 0;
   int is_cycle = 0;
   char* l = (char*) opt.sequence;
@@ -135,17 +152,18 @@ static int does_generate_a_cycle(const char* target){
       l = s + 1;
     }
   }
-  return is_cycle;
+  if (is_cycle) die("target '%s' generates a dependency cicle.\n", target);
 }
 
 static int do_target(char* target){
   int result = 0;
   if (is_source_file(target)) return 0;
   db_clear(target);
-  if (!is_file_executable(opt.builder)) Fatal();
+  if (!is_file_executable(opt.builder))
+    die("invalid builder '%s'.\n", opt.builder);
   remove(WIP_TARGET_OUTPUT);
   info(1, "running builder script for %s.\n", target);
-  //if (does_generate_a_cycle(target)) Fatal();
+  //check_dependency_cycle(target);
   set_environment_for_subprocess(target);
   if (0 != run_child(opt.builder)){
     remove(WIP_TARGET_OUTPUT);
@@ -155,8 +173,8 @@ static int do_target(char* target){
       move_file_os(WIP_TARGET_OUTPUT, target);
   }
   if (!is_in_db(target, 1)) db_clear(target);
-  else db_commit(target, 0);
-  if (result) Fatal();
+  else db_commit(target, 0, 0);
+  if (result) die("failed to build target '%s'.\n", target);
   return result;
 }
 
@@ -184,7 +202,7 @@ static dependency_type parse_dependency_line(char* line, char** path, char** tim
   char* tmp = line;
 
   tmp = strchr(tmp, ' ');
-  if (!tmp) Fatal();
+  if (!tmp) goto err;
   dependency_type result = UNKNOWN_DEP;
   switch(line[0]){
     break; case '+': result = CHANGE_DEP;
@@ -195,24 +213,27 @@ static dependency_type parse_dependency_line(char* line, char** path, char** tim
 
   if (hash) *hash = tmp;
   tmp = strchr(tmp, ' ');
-  if (!tmp) Fatal();
+  if (!tmp) goto err;
   if (do_split) *tmp = '\0';
   tmp += 1;
 
   if (time) *time = tmp;
   tmp = strchr(tmp, ' ');
-  if (!tmp) Fatal();
+  if (!tmp) goto err;
   if (do_split) *tmp = '\0';
   tmp += 1;
 
   if (path) *path = tmp;
   return result;
+
+err:
+  die("invalid dependency file '%s'.\n", path);
 }
 
 static int store_create_dependence(const char* dependency){
-  if (file_exists(dependency)) Fatal();
-  FILE * dep = db_open(opt.parent_target, 1, "a+b");
-  if (dep == NULL) Fatal();
+  if (file_exists(dependency)) die("unexpected error %d\n", __LINE__); // TODO : is this needed ?
+  FILE * dep = db_open(opt.parent_target, 1, "a+b", 1);
+  if (NULL == dep) die("can not store creation dependency for '%s'.\n", dependency);
   fseek(dep, 0, SEEK_SET);
   int found = 0;
   char * rp;
@@ -225,7 +246,8 @@ static int store_create_dependence(const char* dependency){
 }
 
 static int do_if_create(char* target){
-  if ('\0' == opt.parent_target[0]) Fatal();
+  if ('\0' == opt.parent_target[0])
+    die("%s", "empty parent target, 'ifcreate' should be called by the builder only.\n");
   store_create_dependence(target);
   return 0;
 }
@@ -239,7 +261,7 @@ static char * get_timestamp(const char * path){
 static char* get_hash(const char * path){
   if (!opt.check_hash) return HASH_EMPTY;
   FILE *file = fopen(path, "r");
-  if (file == NULL) Fatal();
+  if (file == NULL) die("can not open file '%s' - %s.\n", path, strerror(errno));
   
   // Jenkins One-at-time Hash
   uint32_t hash = 0;
@@ -276,10 +298,9 @@ static int rebuild_target_if_needed(const char* target){
   info(1, "for '%s' checking prerequisites of '%s'.\n", opt.parent_target, target);
   int should_be_rebuilt = 0;
   if (!file_exists(target)) should_be_rebuilt = 5;
-  FILE * file = db_open(target, 0, "rb");
-  if (file){
+  FILE * file = db_open(target, 0, "rb", 0);
+  if (NULL != file){
     size_t len = 0;
-    if (!file) Fatal();
     fseek(file, 0, SEEK_END);
     len = ftell(file);
     fseek(file, 0, SEEK_SET);
@@ -306,7 +327,7 @@ static int rebuild_target_if_needed(const char* target){
       line = nl + 1;
     }
   }
-  file = db_open(target, 0, "rb");
+  file = db_open(target, 0, "rb", 0);
   if (file){
     while (get_line_from_file(line_buffer, sizeof(line_buffer), file)) {
       char *path, *time, *hash;
@@ -323,7 +344,7 @@ static int rebuild_target_if_needed(const char* target){
   if (0 == should_be_rebuilt) info(1, "'%s' is up to date.\n", target);
   else info(1, "'%s' should be rebuilt (%d).\n", target, should_be_rebuilt); // TODO : proper explanation
   if (should_be_rebuilt) {
-    if (does_generate_a_cycle(target)) Fatal();
+    check_dependency_cycle(target);
     set_environment_for_subprocess(target);
     return run_child(opt.rebuild);
   }
@@ -337,11 +358,9 @@ static int store_change_dependence(const char * dependency){
     when = get_timestamp(dependency);
     hash = get_hash(dependency);
   }
-  FILE * in = db_open(opt.parent_target, 1, "rb");
-  errno = 0;
-  FILE * out = db_open(opt.parent_target, 2, "wb");
-  if (out == NULL) Fatal();
-  if (errno != 0) Fatal();
+  FILE * in = db_open(opt.parent_target, 1, "rb", 0);
+  FILE * out = db_open(opt.parent_target, 2, "wb", 1);
+  if (NULL == out) die("can not store change dependency for '%s'.\n", opt.parent_target);
   if (in){
     fseek(in, 0, SEEK_SET);
     while (get_line_from_file(line_buffer, sizeof(line_buffer), in)) {
@@ -357,12 +376,14 @@ static int store_change_dependence(const char * dependency){
   fprintf(out, "%s\n", content);
   info(7, "dependency stored [%s] (wip.wip) <- [%s].\n", opt.parent_target, content);
   fclose(out);
-  if (db_commit(opt.parent_target, 1)) Fatal();
+  if (db_commit(opt.parent_target, 1, 1))
+    die("can not commit changes to the dependency database for the target '%s'.\n", opt.parent_target);
   return 0;
 }
 
 static int do_if_change(char* target){
-  if ('\0' == opt.parent_target[0]) Fatal();
+  if ('\0' == opt.parent_target[0])
+    die("%s", "empty parent target, 'ifchange' should be called by the builder only.\n");
   int result = 0;
   if (rebuild_target_if_needed(target))
     result = -1;
@@ -540,14 +561,14 @@ static int set_environment_variable(const char* key, const char* value){
 
 static int run_child(const char * cmd){
   pid_t pid = fork();
-  if (pid < 0) Fatal();
+  if (pid < 0) die("can not create sub-process - %s.\n", strerror(errno));
   if (!pid){
     // child - never return
     execl(cmd, cmd, (char *)0);
   } else {
     // parent
     int status;
-    if (-1 == waitpid(pid, &status, 0)) Fatal();
+    if (-1 == waitpid(pid, &status, 0)) die("sub-process abnormally ended - %s.", strerror(errno));
     int result = 0;
     if (WIFEXITED(status)) result = WEXITSTATUS(status);
     return result;
@@ -576,7 +597,7 @@ static int move_file_os(const char * from, const char * to){
 static char* get_last_modification_timesamp(const char* path){
 	struct stat st;
   int fd = open(path, 0);
-  if (0> fd) Fatal();
+  if (0> fd) die("can not get info about '%s' - %s.\n", path, strerror(errno));
 	fstat(fd, &st);
   close(fd);
 	SSTR(char* timestamp, 17, "%08" PRIx32 "%08" PRIx32, (uint32_t)st.st_mtim.tv_sec, (uint32_t)st.st_mtim.tv_nsec);
@@ -616,7 +637,7 @@ static int run_child(const char * cmd){
   CPTRW(WCHAR* cmlinW, cmlin);
   if(!CreateProcessW(NULL, cmlinW,
                      NULL, NULL, FALSE, 0, NULL, NULL, &si,  &pi)
-  ) Fatal();
+  ) die("%s", "can not create sub-process.\n");
   WaitForSingleObject( pi.hProcess, INFINITE );
   DWORD exit_code;
   if (FALSE == GetExitCodeProcess(pi.hProcess, &exit_code)) exit_code = -1;
@@ -662,8 +683,8 @@ static char* get_last_modification_timesamp(const char* path){
   HANDLE filehandle;
   FILETIME timeinfo;
   filehandle = CreateFileW(pathW, GENERIC_READ, FILE_SHARE_READ,  NULL,  OPEN_EXISTING,  FILE_ATTRIBUTE_NORMAL, NULL);
-  if(filehandle == INVALID_HANDLE_VALUE) Fatal();
-  if(!GetFileTime(filehandle, NULL, NULL, &timeinfo)) Fatal();
+  if(filehandle == INVALID_HANDLE_VALUE) die("can not get info about '%s'.\n", path);
+  if(!GetFileTime(filehandle, NULL, NULL, &timeinfo)) die("can not get info about '%s'.\n", path);
   SSTR(char* timestamp, 17, "%08" PRIx32 "%08" PRIx32, (uint32_t)timeinfo.dwHighDateTime, (uint32_t)timeinfo.dwLowDateTime);
   return timestamp;
 }

@@ -16,24 +16,49 @@ ideas come from that project, however, for sake of clarity, I will present
 
 You have to write an external build script (EBS) in the file `build.cmd`, in
 any language you like, interpreted or compiled too. Than you can run `rebuild`
-in the same folder. Its sources is small enough to let you, if you want, to place
-them in the same folder of `build.cmd` and make a wrapper for
-```
-gcc -o rebuild rebuild.c && ./rebuild
-```
+in the same folder.
 
-Both the method will build the `all` target, otherwise you can specify a
-different target by command line:
+this will build the `all` target, otherwise you can specify a different target
+by command line:
 ```
-./rebuild target_name
+rebuild target_name
 ```
 
 The EBS will inform `rebuild` of the target dependencies and it will execute
 the build instructions (see next section for more details); it pratically
-reasembles the content of a `Makefile` for example. It does not have to check
+reasembles the content of, for example, a `Makefile`. It does not have to check
 which target is up-to-date or not, that is hadled by the `rebuild` system: it
 will take care to recursivelly call the EBS over the target that needs to be
-rebuilt.
+rebuilt. For more details see the rest of the documentation.
+
+# Build
+
+Static binaries for Linux (x86 and arm) and windows (x86) are in the
+[release page](https://github.com/pocomane/rebuild/releases).
+However you may want to build it by yourself.
+
+`Rebuild` should be built simply with:
+```
+gcc -o rebuild rebuild.c
+```
+
+Hoever some compiler installation may have incompatible defaults, so the complete
+line should be something like:
+```
+gcc -std=c99 -D_POSIX_C_SOURCE=200809L -o rebuild rebuild.c
+```
+or
+```
+gcc -std=c99 -D_WIN32 -o rebuild rebuild.c
+```
+
+Because of how `rebuild` works, and due to its simple and quick compilation,
+you may consider to reditribute its source within your project. So you can make
+a simple wrapper to compile it before to build your project, i.e.:
+```
+#!/bin/sh
+gcc -o rebuild rebuild.c && ./rebuild
+```
 
 # How it works
 
