@@ -103,6 +103,7 @@ static int db_clear(const char* target){
   DB_PATH(path, target, 0); // TODO : cleanup, do not allocate new space on stack
   info(7, "clear [%s] [/wip].\n", path);
   remove(path);
+  return 0;
 }
 
 static int is_in_db(const char* target, int level){
@@ -141,7 +142,6 @@ static int is_source_file(const char * path){
 }
 
 static void check_dependency_cycle(const char* target){
-  size_t len = 0;
   int is_cycle = 0;
   char* l = (char*) opt.sequence;
   for (char* s = l; !is_cycle && '\0' != *s; s +=1){
@@ -192,6 +192,7 @@ typedef enum { UNKNOWN_DEP = -1, CHANGE_DEP = 1, CREATE_DEP, } dependency_type;
 static char* format_dependency_line(dependency_type type, const char * hash, const char * time, const char * dependency){
   char* ts = "?";
   switch(type){
+    break; default: ;
     break; case CHANGE_DEP: ts = "+";
     break; case CREATE_DEP: ts = "-";
   }
@@ -229,7 +230,7 @@ static dependency_type parse_dependency_line(char* line, char** path, char** tim
   return result;
 
 err:
-  die("invalid dependency file '%s'.\n", path);
+  die("invalid dependency file '%s'.\n", *path);
 }
 
 static int store_create_dependence(const char* dependency){
@@ -283,7 +284,6 @@ static char* get_hash(const char * path){
 static int did_file_change(char* path, char* time, char* hash){
   if (!opt.check_time && !opt.check_hash)
     return 1;
-  int same_time = 0, same_hash = 0;
   char* fs_time = get_timestamp(path);
   if (opt.check_time)
    if (strcmp(time, fs_time))
@@ -303,11 +303,12 @@ static int rebuild_target_if_needed(const char* target){
   FILE * file = db_open(target, 0, "rb", 0);
   if (NULL != file){
     size_t len = 0;
+    // TODO : check file errors
     fseek(file, 0, SEEK_END);
     len = ftell(file);
     fseek(file, 0, SEEK_SET);
     char cont[len+1];
-    int r = fread(cont, len, 1, file);
+    fread(cont, len, 1, file);
     cont[len] = '\0';
     fclose(file);
     char* line = cont;
@@ -367,10 +368,8 @@ static int store_change_dependence(const char * dependency){
     fseek(in, 0, SEEK_SET);
     while (get_line_from_file(line_buffer, sizeof(line_buffer), in)) {
       char * rp;
-      if (CHANGE_DEP == parse_dependency_line(line_buffer, &rp, NULL, NULL)){
-        char * sub = strstr(line_buffer, dependency);
+      if (CHANGE_DEP == parse_dependency_line(line_buffer, &rp, NULL, NULL))
         if (strcmp(rp, dependency)) fprintf(out, "%s\n", line_buffer);
-      }
     }
     fclose(in);
   }
@@ -449,13 +448,11 @@ static int set_environment_for_subprocess(const char* target){
   set_environment_variable(ENVAR_REBUILD, opt.rebuild);
   STACKF(char* seq, "%s%s\n", opt.sequence, target);
   set_environment_variable(ENVAR_SEQUENCE, seq);
+  return 0;
 }
 
 int cli_main(int argc, char *argv[]) {
 
-  char* astr;
-  size_t alen;
-  
   // TODO : proper logging and exit (for now exit(-1) is always used)
 
   opt.rebuild = get_process_binary(argc, argv);
@@ -481,9 +478,8 @@ int cli_main(int argc, char *argv[]) {
   STACKF(opt.sequence, "%s", opt.sequence);
 
   opt.parent_target = 0;
-  char * s = opt.sequence;
   int nesting = 0;
-  for (int k = 0; *s != '\0'; s += 1) if (*s == '\n') {
+  for (char *s = opt.sequence; *s != '\0'; s += 1) if (*s == '\n') {
     nesting += 1;
     if (s[1] != '\0') opt.parent_target = s + 1;
   }
@@ -495,7 +491,7 @@ int cli_main(int argc, char *argv[]) {
   nestr[nesting+1] = '\0';
   opt.nesting = nestr;
 
-  astr = environment_with_default(ENVAR_CHECK_TIME, "1");
+  char *astr = environment_with_default(ENVAR_CHECK_TIME, "1");
   opt.check_time = strcmp(astr, "0");
 
   astr = environment_with_default(ENVAR_CHECK_HASH, "1");

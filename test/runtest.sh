@@ -133,12 +133,12 @@ test_setup(){
   else
 
     # POSIX test
-    gcc -g -o ./rebuild ../rebuild.c
+    gcc -std=c99 -Wall -D_POSIX_C_SOURCE=200809L -o rebuild ../rebuild.c
     DUMBBUILD="./build.cmd"
     export RBE="./rebuild"
 
     # WINDOES test
-    # gcc -g -o ./rebuild.exe ../rebuild.c
+    # gcc -std=c99 -Wall -D_WIN32 -o rebuild ../rebuild.c
     # mv build.cmd build.sh
     # mv build.bat build.cmd
     # DUMBBUILD="./build.sh"
