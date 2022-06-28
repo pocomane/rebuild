@@ -19,36 +19,24 @@
 #define HASH_EMPTY    "nohash"
 #define TIME_EMPTY    "notime"
 
-#define WIP_TARGET_OUTPUT "./target.wip"
-
-#define info(L,F,...) do{ \
-  if(L <= 0 || opt.verbosity >= L) {\
-    fprintf(L<0 ? stderr : stdout, "rebuild %s " F, opt.nesting, __VA_ARGS__); \
-    fflush(L<0 ? stderr : stdout); \
-  } \
-}while(0)
-
-#define die(F,...) do{ \
-  info(-1, F, __VA_ARGS__); \
-  exit(-1); \
-}while(0)
+#define BUILDER_OUTPUT "./target.wip"
 
 #define LID_UT_CAT2(A,B) A ## B
 #define LID_UT_CAT(A,B) LID_UT_CAT2(A,B)
 #define LID(N) LID_UT_CAT(__,LID_UT_CAT(N,__LINE__))
 
-#define SSTR(C, L, F, ...) \
+// To be used in a single line, e.g.: STATICF(char *var, "%d", 1);
+#define STATICF(C, L, F, ...) \
   static char LID(x)[L];                            \
   snprintf(LID(x), sizeof(LID(x)), F, __VA_ARGS__); \
   C = LID(x)
 
-#define ASTR(C, F, ...) \
+// To be used in a single line, e.g.: STACKF(char *var, "%d", 1);
+#define STACKF(C, F, ...) \
   int LID(x) = snprintf(NULL, 0, F, __VA_ARGS__);   \
   char LID(y)[LID(x)+1];                            \
   snprintf(LID(y), sizeof(LID(y)), F, __VA_ARGS__); \
   C = LID(y)
-
-static char line_buffer[PATHSIZE +16 +8 +2 +4 +1]; // path:PATHSIZE timestamp:16 hash:8 type:1 spaces:3 terminator:1
 
 struct {
   char* rebuild;
@@ -62,6 +50,20 @@ struct {
   int verbosity;
 } opt = {0};
 
+#define info(L,F,...) do{ \
+  if(L <= 0 || opt.verbosity >= L) {\
+    fprintf(L<0 ? stderr : stdout, "rebuild %s " F, opt.nesting, __VA_ARGS__); \
+    fflush(L<0 ? stderr : stdout); \
+  } \
+}while(0)
+
+#define die(F,...) do{ \
+  info(-1, F, __VA_ARGS__); \
+  exit(-1); \
+}while(0)
+
+static char line_buffer[PATHSIZE +16 +8 +2 +4 +1]; // path:PATHSIZE timestamp:16 hash:8 type:1 spaces:3 terminator:1
+
 // system dependent hooks
 static char* get_process_binary(int argc, char* argv[]);
 static int set_environment_variable(const char* key, const char* value);
@@ -69,8 +71,8 @@ static int run_child(const char * cmd);
 static int make_directory(const char * path);
 static int file_exists(const char * name);
 static int is_file_executable(const char * path);
-static int move_file_os(const char * from, const char * to);
-static char* get_last_modification_timesamp(const char* path);
+static int move_file(const char * from, const char * to);
+static char* get_modification_time(const char* path);
 
 // in the cli section
 static int set_environment_for_subprocess(const char* target);
@@ -91,7 +93,7 @@ static int make_parent_directory(const char* path){
   return 0;
 }
 
-#define DB_PATH(C,T,L) ASTR(C, "%s/%s%s", opt.database, T, \
+#define DB_PATH(C,T,L) STACKF(C, "%s/%s%s", opt.database, T, \
   ((L) == 0 ? "_dep.txt" : (L) == 1 ? "_dep.txt.wip" : "_dep.txt.wip.wip"))
 
 static int db_clear(const char* target){
@@ -112,7 +114,7 @@ static int db_commit(const char* target, int level, int report){
   DB_PATH(char* from, target, level+1);
   DB_PATH(char* to, target, level);
   info(7, "commit [%s] <- [%s].\n", to, from);
-  int result = move_file_os(from, to);
+  int result = move_file(from, to);
   if (report && result) info(-1, "can not move '%s' to '%s'.\n", from, to); // TODO : is this needed ?
   return result;
 }
@@ -152,25 +154,25 @@ static void check_dependency_cycle(const char* target){
       l = s + 1;
     }
   }
-  if (is_cycle) die("target '%s' generates a dependency cicle.\n", target);
+  if (is_cycle) die("target '%s' generates a dependency cycle.\n", target);
 }
 
-static int do_target(char* target){
+static int rebuild_target(char* target){
   int result = 0;
   if (is_source_file(target)) return 0;
   db_clear(target);
   if (!is_file_executable(opt.builder))
     die("invalid builder '%s'.\n", opt.builder);
-  remove(WIP_TARGET_OUTPUT);
+  remove(BUILDER_OUTPUT);
   info(1, "running builder script for %s.\n", target);
   //check_dependency_cycle(target);
   set_environment_for_subprocess(target);
   if (0 != run_child(opt.builder)){
-    remove(WIP_TARGET_OUTPUT);
+    remove(BUILDER_OUTPUT);
     result = -1;
   } else {
-    if (file_exists(WIP_TARGET_OUTPUT))
-      move_file_os(WIP_TARGET_OUTPUT, target);
+    if (file_exists(BUILDER_OUTPUT))
+      move_file(BUILDER_OUTPUT, target);
   }
   if (!is_in_db(target, 1)) db_clear(target);
   else db_commit(target, 0, 0);
@@ -245,7 +247,7 @@ static int store_create_dependence(const char* dependency){
   return 0;
 }
 
-static int do_if_create(char* target){
+static int rebuild_if_create(char* target){
   if ('\0' == opt.parent_target[0])
     die("%s", "empty parent target, 'ifcreate' should be called by the builder only.\n");
   store_create_dependence(target);
@@ -255,7 +257,7 @@ static int do_if_create(char* target){
 static char * get_timestamp(const char * path){
   if (!opt.check_hash)
     return TIME_EMPTY; //return "1000-10-10T01:01:01.000001";
-  return get_last_modification_timesamp(path);
+  return get_modification_time(path);
 }
 
 static char* get_hash(const char * path){
@@ -274,7 +276,7 @@ static char* get_hash(const char * path){
 	hash ^= hash >> 11;
 	hash += hash << 15;
 
-  SSTR(char* strhash, 9, "%08x", hash);
+  STATICF(char* strhash, 9, "%08x", hash);
   return strhash;
 }
 
@@ -381,7 +383,7 @@ static int store_change_dependence(const char * dependency){
   return 0;
 }
 
-static int do_if_change(char* target){
+static int rebuild_if_change(char* target){
   if ('\0' == opt.parent_target[0])
     die("%s", "empty parent target, 'ifchange' should be called by the builder only.\n");
   int result = 0;
@@ -438,19 +440,18 @@ static int print_help(char* cmd){
 
 static char * environment_with_default(const char* varname, char* fallback){
   char * result = getenv(varname);
-  if (!result) return fallback;
-  return result;
+  return result ? result : fallback;
 }
 
 static int set_environment_for_subprocess(const char* target){
   set_environment_variable(ENVAR_TARGET, target);
-  set_environment_variable(ENVAR_OUTPUT, WIP_TARGET_OUTPUT);
+  set_environment_variable(ENVAR_OUTPUT, BUILDER_OUTPUT);
   set_environment_variable(ENVAR_REBUILD, opt.rebuild);
-  ASTR(char* seq,"%s%s\n", opt.sequence, target);
+  STACKF(char* seq, "%s%s\n", opt.sequence, target);
   set_environment_variable(ENVAR_SEQUENCE, seq);
 }
 
-int cliapp_main(int argc, char *argv[]) {
+int cli_main(int argc, char *argv[]) {
 
   char* astr;
   size_t alen;
@@ -462,22 +463,22 @@ int cliapp_main(int argc, char *argv[]) {
   // TODO : canonize rebuild path
   
   char* workdir = environment_with_default("PWD", "./");
-  ASTR(workdir, "%s", workdir);
+  STACKF(workdir, "%s", workdir);
 
-  ASTR(opt.database, "%s/%s", workdir, ".rebuild");
+  STACKF(opt.database, "%s/%s", workdir, ".rebuild");
   opt.database = environment_with_default(ENVAR_DATABASE, opt.database);
-  ASTR(opt.database, "%s", opt.database); // TODO : cleanup, do not allocate new space on stack
+  STACKF(opt.database, "%s", opt.database); // TODO : cleanup, do not allocate new space on stack
 
   // TODO : canonize database path
 
-  ASTR(opt.builder, "%s/%s", workdir, "build.cmd");
+  STACKF(opt.builder, "%s/%s", workdir, "build.cmd");
   opt.builder = environment_with_default(ENVAR_BUILDER, opt.builder);
-  ASTR(opt.builder, "%s", opt.builder); // TODO : cleanup, do not allocate new space on stack
+  STACKF(opt.builder, "%s", opt.builder); // TODO : cleanup, do not allocate new space on stack
   
   // TODO : canonize builder path
   
   opt.sequence = environment_with_default(ENVAR_SEQUENCE, "");
-  ASTR(opt.sequence, "%s", opt.sequence);
+  STACKF(opt.sequence, "%s", opt.sequence);
 
   opt.parent_target = 0;
   char * s = opt.sequence;
@@ -486,7 +487,7 @@ int cliapp_main(int argc, char *argv[]) {
     nesting += 1;
     if (s[1] != '\0') opt.parent_target = s + 1;
   }
-  ASTR(opt.parent_target, "%s", opt.parent_target);
+  STACKF(opt.parent_target, "%s", opt.parent_target);
   opt.parent_target[strlen(opt.parent_target)-1]='\0';
 
   char nestr[nesting+2];
@@ -509,18 +510,18 @@ int cliapp_main(int argc, char *argv[]) {
 
   int result = 0;
   if (argc < 2){
-	  result = do_target(deftar);
+	  result = rebuild_target(deftar);
   } else if (strcmp(argv[1], "ifcreate") == 0) {
     argc -= 2;
     argv += 2;
     for(int t = 0; t < argc; t += 1)
-      result = do_if_create(argv[t]) || result;
+      result = rebuild_if_create(argv[t]) || result;
 	} else {
 	  if (strcmp(argv[1], "ifchange") == 0) {
 	    argc -= 2;
 	    argv += 2;
       for(int t = 0; t < argc; t += 1)
-        result = do_if_change(argv[t]) || result;
+        result = rebuild_if_change(argv[t]) || result;
     } else if (strcmp(argv[1], "help") == 0
       || strcmp(argv[1], "--help") == 0
       || strcmp(argv[1], "-h") == 0 ) {
@@ -534,7 +535,7 @@ int cliapp_main(int argc, char *argv[]) {
         argv += 1;
       }
       for(int t = 0; t < argc; t += 1)
-        result = do_target(argv[t]) || result;
+        result = rebuild_target(argv[t]) || result;
 	  }
 	}
 	return result;
@@ -590,18 +591,18 @@ static int is_file_executable(const char * path){
   return 0;
 }
 
-static int move_file_os(const char * from, const char * to){
+static int move_file(const char * from, const char * to){
   return rename(from, to);
 }
 
-static char* get_last_modification_timesamp(const char* path){
+static char* get_modification_time(const char* path){
 	struct stat st;
   int fd = open(path, 0);
   if (0> fd) die("can not get info about '%s' - %s.\n", path, strerror(errno));
 	fstat(fd, &st);
   close(fd);
-	SSTR(char* timestamp, 17, "%08" PRIx32 "%08" PRIx32, (uint32_t)st.st_mtim.tv_sec, (uint32_t)st.st_mtim.tv_nsec);
-	//SSTR(char* timestamp, 17, "%08" PRIx32, (uint32_t)st.st_mtime);
+	STATICF(char* timestamp, 17, "%08" PRIx32 "%08" PRIx32, (uint32_t)st.st_mtim.tv_sec, (uint32_t)st.st_mtim.tv_nsec);
+	//STATICF(char* timestamp, 17, "%08" PRIx32, (uint32_t)st.st_mtime);
   return timestamp;
   // TODO : return rfc3339 ???
 }
@@ -633,7 +634,7 @@ static int run_child(const char * cmd){
   ZeroMemory( &pi, sizeof(pi) );
   char *p=cmd;
   for (char*p=cmd;*p!='\0';p++)if(*p=='/')*p='\\';
-  ASTR(char* cmlin, "c:\\Windows\\System32\\cmd.exe /C \"%s\"", cmd); // TODO : FIX THIS: correct quoting !
+  STACKF(char* cmlin, "c:\\Windows\\System32\\cmd.exe /C \"%s\"", cmd); // TODO : FIX THIS: correct quoting !
   CPTRW(WCHAR* cmlinW, cmlin);
   if(!CreateProcessW(NULL, cmlinW,
                      NULL, NULL, FALSE, 0, NULL, NULL, &si,  &pi)
@@ -668,7 +669,7 @@ static int is_file_executable(const char * path){
   return 1;
 }
 
-static int move_file_os(const char * from, const char * to){
+static int move_file(const char * from, const char * to){
   remove(to);
   errno = 0;
   CPTRW(WCHAR* fromW, from);
@@ -678,14 +679,14 @@ static int move_file_os(const char * from, const char * to){
   return result;
 }
 
-static char* get_last_modification_timesamp(const char* path){
+static char* get_modification_time(const char* path){
   CPTRW(WCHAR* pathW, path);
   HANDLE filehandle;
   FILETIME timeinfo;
   filehandle = CreateFileW(pathW, GENERIC_READ, FILE_SHARE_READ,  NULL,  OPEN_EXISTING,  FILE_ATTRIBUTE_NORMAL, NULL);
   if(filehandle == INVALID_HANDLE_VALUE) die("can not get info about '%s'.\n", path);
   if(!GetFileTime(filehandle, NULL, NULL, &timeinfo)) die("can not get info about '%s'.\n", path);
-  SSTR(char* timestamp, 17, "%08" PRIx32 "%08" PRIx32, (uint32_t)timeinfo.dwHighDateTime, (uint32_t)timeinfo.dwLowDateTime);
+  STATICF(char* timestamp, 17, "%08" PRIx32 "%08" PRIx32, (uint32_t)timeinfo.dwHighDateTime, (uint32_t)timeinfo.dwLowDateTime);
   return timestamp;
 }
 
@@ -693,5 +694,5 @@ static char* get_last_modification_timesamp(const char* path){
 # error "only posix >= 2008 or windows are supported"
 #endif
 
-int main(int argc, char *argv[]) { return cliapp_main(argc, argv); }
+int main(int argc, char *argv[]) { return cli_main(argc, argv); }
 
