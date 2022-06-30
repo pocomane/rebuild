@@ -392,8 +392,40 @@ static int rebuild_if_change(char* target){
   return result;
 }
 
+int cli_main(int argc, char *argv[]) {
+  int result = 0;
+  char* deftar = opt.parent_target;
+  if (!strcmp(deftar,"")) deftar = "all";
+  if (argc < 2){
+	  result = rebuild_target(deftar);
+  } else if (strcmp(argv[1], "ifcreate") == 0) {
+    argc -= 2;
+    argv += 2;
+    for(int t = 0; t < argc; t += 1)
+      result = rebuild_if_create(argv[t]) || result;
+	} else {
+	  if (strcmp(argv[1], "ifchange") == 0) {
+	    argc -= 2;
+	    argv += 2;
+      for(int t = 0; t < argc; t += 1)
+        result = rebuild_if_change(argv[t]) || result;
+	  } else {
+	    if (strcmp(argv[1], "target") == 0) {
+	      argc -= 2;
+	      argv += 2;
+	    } else {
+        argc -= 1;
+        argv += 1;
+      }
+      for(int t = 0; t < argc; t += 1)
+        result = rebuild_target(argv[t]) || result;
+	  }
+	}
+  return result;
+}
+
 // --------------------------------------------------------------------------------
-// cli interface
+// Environment handling
 
 // Exported for the builder
 #define ENVAR_REBUILD "REBUILD"
@@ -451,7 +483,7 @@ static int set_environment_for_subprocess(const char* target){
   return 0;
 }
 
-int cli_main(int argc, char *argv[]) {
+int env_main(int argc, char *argv[]) {
 
   // TODO : proper logging and exit (for now exit(-1) is always used)
 
@@ -506,40 +538,13 @@ int cli_main(int argc, char *argv[]) {
   if (astr[0] < '0' || astr[0] > '9') opt.verbosity = 1;
   else opt.verbosity = astr[0] - '0';
 
-  char* deftar = opt.parent_target;
-  if (!strcmp(deftar,"")) deftar = "all";
+  if (argc > 1)
+    if (strcmp(argv[1], "help") == 0
+    || strcmp(argv[1], "--help") == 0
+    || strcmp(argv[1], "-h") == 0 )
+      return print_help(argv[0]);
 
-  int result = 0;
-  if (argc < 2){
-	  result = rebuild_target(deftar);
-  } else if (strcmp(argv[1], "ifcreate") == 0) {
-    argc -= 2;
-    argv += 2;
-    for(int t = 0; t < argc; t += 1)
-      result = rebuild_if_create(argv[t]) || result;
-	} else {
-	  if (strcmp(argv[1], "ifchange") == 0) {
-	    argc -= 2;
-	    argv += 2;
-      for(int t = 0; t < argc; t += 1)
-        result = rebuild_if_change(argv[t]) || result;
-    } else if (strcmp(argv[1], "help") == 0
-      || strcmp(argv[1], "--help") == 0
-      || strcmp(argv[1], "-h") == 0 ) {
-        print_help(argv[0]);
-	  } else {
-	    if (strcmp(argv[1], "target") == 0) {
-	      argc -= 2;
-	      argv += 2;
-	    } else {
-        argc -= 1;
-        argv += 1;
-      }
-      for(int t = 0; t < argc; t += 1)
-        result = rebuild_target(argv[t]) || result;
-	  }
-	}
-	return result;
+	return cli_main(argc, argv);
 }
 
 // ---------------------------------------------------------------------------------
@@ -695,5 +700,5 @@ static char* get_modification_time(const char* path){
 # error "only posix >= 2008 or windows are supported"
 #endif
 
-int main(int argc, char *argv[]) { return cli_main(argc, argv); }
+int main(int argc, char *argv[]) { return env_main(argc, argv); }
 
