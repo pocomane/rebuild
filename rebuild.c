@@ -477,14 +477,19 @@ int cli_main(int argc, char *argv[]) {
   opt.sequence = environment_with_default(ENVAR_SEQUENCE, "");
   STACKF(opt.sequence, "%s", opt.sequence);
 
-  opt.parent_target = 0;
   int nesting = 0;
-  for (char *s = opt.sequence; *s != '\0'; s += 1) if (*s == '\n') {
+  opt.parent_target = opt.sequence;
+  for (char *s = opt.sequence; '\0' != s[0]; s += 1) {
+    if ('\n' != s[0]) continue;
     nesting += 1;
-    if (s[1] != '\0') opt.parent_target = s + 1;
+    if ('\0' == s[1]) {
+      break;
+    }
+    opt.parent_target = s + 1;
   }
   STACKF(opt.parent_target, "%s", opt.parent_target);
-  opt.parent_target[strlen(opt.parent_target)-1]='\0';
+  if ('\0' != opt.parent_target[0])
+    opt.parent_target[strlen(opt.parent_target)-1]='\0';
 
   char nestr[nesting+2];
   memset(nestr, '-', nesting+1);

@@ -14,7 +14,7 @@ do_test "build from zero" full.test "$RBE" all <<EOF
 >> building all
 EOF
 
-do_test "target alredy built" full.test "$RBE" all <<EOF
+do_test "target alredy built" full.test "$RBE" <<EOF
 >> building all
 EOF
 
