@@ -65,6 +65,7 @@ struct {
 static char line_buffer[PATHSIZE +16 +8 +2 +4 +1]; // path:PATHSIZE timestamp:16 hash:8 type:1 spaces:3 terminator:1
 
 // system dependent hooks
+#define ERROR_PROCESS_EXECUTION (-1001)
 static char* get_process_binary(int argc, char* argv[]);
 static int set_environment_variable(const char* key, const char* value);
 static int run_child(const char * cmd);
@@ -157,6 +158,13 @@ static void check_dependency_cycle(const char* target){
   if (is_cycle) die("target '%s' generates a dependency cycle.\n", target);
 }
 
+static int run_child_or_die(const char* cmd){
+  int result = run_child(cmd);
+  if (ERROR_PROCESS_EXECUTION == result)
+    die("can not create sub-process - %s.\n", cmd);
+  return result;
+}
+
 static int rebuild_target(char* target){
   int result = 0;
   if (is_source_file(target)) return 0;
@@ -167,7 +175,7 @@ static int rebuild_target(char* target){
   info(1, "running builder script for %s.\n", target);
   //check_dependency_cycle(target);
   set_environment_for_subprocess(target);
-  if (0 != run_child(opt.builder)){
+  if (0 != run_child_or_die(opt.builder)){
     remove(BUILDER_OUTPUT);
     result = -1;
   } else {
@@ -256,9 +264,10 @@ static int rebuild_if_create(char* target){
 }
 
 static char * get_timestamp(const char * path){
-  if (!opt.check_hash)
-    return TIME_EMPTY; //return "1000-10-10T01:01:01.000001";
-  return get_modification_time(path);
+  if (!opt.check_hash) return TIME_EMPTY; //return "1000-10-10T01:01:01.000001";
+  char* result = get_modification_time(path);
+  if (NULL == result) die("can not get info about '%s'.\n", path);
+  return result;
 }
 
 static char* get_hash(const char * path){
@@ -349,7 +358,7 @@ static int rebuild_target_if_needed(const char* target){
   if (should_be_rebuilt) {
     check_dependency_cycle(target);
     set_environment_for_subprocess(target);
-    return run_child(opt.rebuild);
+    return run_child_or_die(opt.rebuild);
   }
   return 0;
 }
@@ -568,14 +577,14 @@ static int set_environment_variable(const char* key, const char* value){
 
 static int run_child(const char * cmd){
   pid_t pid = fork();
-  if (pid < 0) die("can not create sub-process - %s.\n", strerror(errno));
+  if (pid < 0) return ERROR_PROCESS_EXECUTION;
   if (!pid){
     // child - never return
     execl(cmd, cmd, (char *)0);
   } else {
     // parent
     int status;
-    if (-1 == waitpid(pid, &status, 0)) die("sub-process abnormally ended - %s.", strerror(errno));
+    if (-1 == waitpid(pid, &status, 0)) return ERROR_PROCESS_EXECUTION;
     int result = 0;
     if (WIFEXITED(status)) result = WEXITSTATUS(status);
     return result;
@@ -604,7 +613,7 @@ static int move_file(const char * from, const char * to){
 static char* get_modification_time(const char* path){
 	struct stat st;
   int fd = open(path, 0);
-  if (0> fd) die("can not get info about '%s' - %s.\n", path, strerror(errno));
+  if (0> fd) return NULL;
 	fstat(fd, &st);
   close(fd);
 	STATICF(char* timestamp, 17, "%08" PRIx32 "%08" PRIx32, (uint32_t)st.st_mtim.tv_sec, (uint32_t)st.st_mtim.tv_nsec);
@@ -690,8 +699,8 @@ static char* get_modification_time(const char* path){
   HANDLE filehandle;
   FILETIME timeinfo;
   filehandle = CreateFileW(pathW, GENERIC_READ, FILE_SHARE_READ,  NULL,  OPEN_EXISTING,  FILE_ATTRIBUTE_NORMAL, NULL);
-  if(filehandle == INVALID_HANDLE_VALUE) die("can not get info about '%s'.\n", path);
-  if(!GetFileTime(filehandle, NULL, NULL, &timeinfo)) die("can not get info about '%s'.\n", path);
+  if(filehandle == INVALID_HANDLE_VALUE) return NULL;
+  if(!GetFileTime(filehandle, NULL, NULL, &timeinfo)) return NULL;
   STATICF(char* timestamp, 17, "%08" PRIx32 "%08" PRIx32, (uint32_t)timeinfo.dwHighDateTime, (uint32_t)timeinfo.dwLowDateTime);
   return timestamp;
 }
