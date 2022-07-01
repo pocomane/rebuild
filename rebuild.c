@@ -653,7 +653,7 @@ static int run_child(const char * cmd){
   CPTRW(WCHAR* cmlinW, cmlin);
   if(!CreateProcessW(NULL, cmlinW,
                      NULL, NULL, FALSE, 0, NULL, NULL, &si,  &pi)
-  ) die("%s", "can not create sub-process.\n");
+  ) return ERROR_PROCESS_EXECUTION;
   WaitForSingleObject( pi.hProcess, INFINITE );
   DWORD exit_code;
   if (FALSE == GetExitCodeProcess(pi.hProcess, &exit_code)) exit_code = -1;
