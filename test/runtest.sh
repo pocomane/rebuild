@@ -106,6 +106,15 @@ lineref do_test "cycle" "$RBE" cycle_c <<EOF
 >> cycle_h done
 EOF
 
+lineref do_test "sources in subfolder" "$RBE" subfolder.test <<EOF
+>> building generic subfolder/x.test
+>> building generic subfolder/y.test
+>> building subfolder.test
+EOF
+
+lineref check_in_db ./ subfolder/x.test
+lineref check_no_db ./subfolder
+
 }
 
 # ---------------------------------------------------------------------------------
@@ -188,6 +197,32 @@ do_test(){
 
 test_end(){
   echo "all is ok"
+}
+
+_get_db_path_(){
+  if [ "$2" = "" ] ; then
+    DBPATH="$1/.rebuild"
+  else
+    DBPATH="$1/.rebuild/${2}_dep.txt"
+  fi
+}
+
+check_in_db(){
+  _get_db_path_ "$1" "$2"
+  if [ \! -f "$DBPATH" ]; then
+    die "db not found for $@"
+    exit 13
+  fi
+  return 0
+}
+
+check_no_db(){
+  _get_db_path_ "$1"
+  if [ -e "$DBPATH" ]; then
+    die "unexpected db found in $@"
+    exit 13
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------------

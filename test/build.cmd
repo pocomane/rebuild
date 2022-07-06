@@ -84,7 +84,13 @@ case "$TARGET" in
       cat "$source_b" > "$OUTPUT"
     fi
   ;;
-  
+
+  "subfolder.test" )
+    "$REBUILD" ifchange subfolder/x.test subfolder/y.test
+    echo ">> building subfolder.test"
+    cat subfolder/x.test subfolder/y.test > "$OUTPUT"
+  ;;
+
   *".test" )
     source="$TARGET.txt"
     "$REBUILD" ifchange "$source"
