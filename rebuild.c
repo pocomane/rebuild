@@ -19,8 +19,6 @@
 #define HASH_EMPTY    "nohash"
 #define TIME_EMPTY    "notime"
 
-#define BUILDER_OUTPUT "./target.wip"
-
 #define LID_UT_CAT2(A,B) A ## B
 #define LID_UT_CAT(A,B) LID_UT_CAT2(A,B)
 #define LID(N) LID_UT_CAT(__,LID_UT_CAT(N,__LINE__))
@@ -45,6 +43,7 @@ struct {
   char* parent_target;
   char* nesting;
   char* sequence;
+  char* outpath;
   int check_time;
   int check_hash;
   int verbosity;
@@ -66,6 +65,7 @@ static char line_buffer[PATHSIZE +16 +8 +2 +4 +1]; // path:PATHSIZE timestamp:16
 
 // system dependent hooks
 #define ERROR_PROCESS_EXECUTION (-1001)
+static char* get_current_directory();
 static char* get_process_binary(int argc, char* argv[]);
 static int set_environment_variable(const char* key, const char* value);
 static int run_child(const char * cmd);
@@ -171,16 +171,16 @@ static int rebuild_target(char* target){
   db_clear(target);
   if (!is_file_executable(opt.builder))
     die("invalid builder '%s'.\n", opt.builder);
-  remove(BUILDER_OUTPUT);
+  remove(opt.outpath);
   info(1, "running builder script for %s.\n", target);
   //check_dependency_cycle(target);
   set_environment_for_subprocess(target);
   if (0 != run_child_or_die(opt.builder)){
-    remove(BUILDER_OUTPUT);
+    remove(opt.outpath);
     result = -1;
   } else {
-    if (file_exists(BUILDER_OUTPUT))
-      move_file(BUILDER_OUTPUT, target);
+    if (file_exists(opt.outpath))
+      move_file(opt.outpath, target);
   }
   if (!is_in_db(target, 1)) db_clear(target);
   else db_commit(target, 0, 0);
@@ -485,7 +485,7 @@ static char * environment_with_default(const char* varname, char* fallback){
 
 static int set_environment_for_subprocess(const char* target){
   set_environment_variable(ENVAR_TARGET, target);
-  set_environment_variable(ENVAR_OUTPUT, BUILDER_OUTPUT);
+  set_environment_variable(ENVAR_OUTPUT, opt.outpath);
   set_environment_variable(ENVAR_REBUILD, opt.rebuild);
   STACKF(char* seq, "%s%s\n", opt.sequence, target);
   set_environment_variable(ENVAR_SEQUENCE, seq);
@@ -494,29 +494,24 @@ static int set_environment_for_subprocess(const char* target){
 
 int env_main(int argc, char *argv[]) {
 
-  // TODO : proper logging and exit (for now exit(-1) is always used)
+  char* cd = get_current_directory();
+  STACKF(cd, "%s/", cd);
+#define NEED_PREF(X) ((X)[0] == '.' ? cd : "") // TODO : better check !
 
   opt.rebuild = get_process_binary(argc, argv);
-  
-  // TODO : canonize rebuild path
-  
-  char* workdir = environment_with_default("PWD", "./");
-  STACKF(workdir, "%s", workdir);
 
-  STACKF(opt.database, "%s/%s", workdir, ".rebuild");
-  opt.database = environment_with_default(ENVAR_DATABASE, opt.database);
-  STACKF(opt.database, "%s", opt.database); // TODO : cleanup, do not allocate new space on stack
+  opt.database = environment_with_default(ENVAR_DATABASE, ".rebuild");
+  STACKF(opt.database, "%s%s", NEED_PREF(opt.database), opt.database);
 
-  // TODO : canonize database path
+  opt.builder = environment_with_default(ENVAR_BUILDER, "build.cmd");
+  STACKF(opt.builder, "%s%s", NEED_PREF(opt.builder), opt.builder);
+  
+  STACKF(opt.outpath, "%s.rebuild/target.wip", cd);
 
-  STACKF(opt.builder, "%s/%s", workdir, "build.cmd");
-  opt.builder = environment_with_default(ENVAR_BUILDER, opt.builder);
-  STACKF(opt.builder, "%s", opt.builder); // TODO : cleanup, do not allocate new space on stack
-  
-  // TODO : canonize builder path
-  
   opt.sequence = environment_with_default(ENVAR_SEQUENCE, "");
   STACKF(opt.sequence, "%s", opt.sequence);
+
+#undef NEED_PREF
 
   int nesting = 0;
   opt.parent_target = opt.sequence;
@@ -566,6 +561,10 @@ int env_main(int argc, char *argv[]) {
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
+
+static char* get_current_directory(){
+  return getenv("PWD");
+}
 
 static char* get_process_binary(int argc, char* argv[]){
   return argv[0]; // TODO : proper implementation !
@@ -631,6 +630,10 @@ static char* get_modification_time(const char* path){
   WCHAR LID(x)[LID(s)];                                                    \
   MultiByteToWideChar(CP_ACP, 0, (char*)PTRC, -1, (LPWSTR)LID(x), LID(s)); \
   PTRW = LID(x)
+
+static char* get_current_directory(){
+  return getenv("CD");
+}
 
 static char* get_process_binary(int argc, char* argv[]){
   return argv[0]; // TODO : proper implementation !
