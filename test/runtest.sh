@@ -156,6 +156,29 @@ test_setup(){
   chmod ugo+x ./build.cmd
   chmod ugo+x "$DUMBBUILD"
 
+  mkdir -p subfolder
+  cat > the\ separator.test.txt <<EOF
+===========================
+EOF
+  cat > a.test.txt <<EOF
+a
+EOF
+  cat > alt_b.test.txt <<EOF
+alt_b
+EOF
+  cat > b.test.txt <<EOF
+b
+EOF
+  cat > _alt_a.test.txt <<EOF
+alt_a
+EOF
+  cat > subfolder/x.test.txt <<EOF
+x
+EOF
+  cat > subfolder/y.test.txt <<EOF
+x
+EOF
+
   set -x
 }
 
