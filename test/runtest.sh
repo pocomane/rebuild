@@ -1,10 +1,10 @@
 #!/bin/sh
 
-alias do_test="_do_test_ \"\$LINENO\""
+alias lineref="_lineref_ \"\$LINENO\""
 
 test_def(){
 
-do_test "build from zero" full.test "$RBE" all <<EOF
+lineref do_test "build from zero" full.test "$RBE" all <<EOF
 >> building generic the separator.test
 >> building generic a.test
 >> building generic b.test
@@ -14,13 +14,13 @@ do_test "build from zero" full.test "$RBE" all <<EOF
 >> building all
 EOF
 
-do_test "target alredy built" full.test "$RBE" <<EOF
+lineref do_test "target alredy built" full.test "$RBE" <<EOF
 >> building all
 EOF
 
 rm full.test partial.test 'the separator.test'
 
-do_test "removed a full branch of the graph" full.test "$RBE" all <<EOF
+lineref do_test "removed a full branch of the graph" full.test "$RBE" all <<EOF
 >> building generic the separator.test
 >> building partial.test
 >> building full.test
@@ -29,7 +29,7 @@ EOF
 
 echo "---------------------------" > 'the separator.test.txt'
 
-do_test "change deep in the graph" full.test "$RBE" all <<EOF
+lineref do_test "change deep in the graph" full.test "$RBE" all <<EOF
 >> building generic the separator.test
 >> building partial.test
 >> building full.test
@@ -39,7 +39,7 @@ EOF
 echo "A" > 'a.test.txt'
 echo "B" > 'b.test.txt'
 
-do_test "two brother changes" full.test "$RBE" all <<EOF
+lineref do_test "two brother changes" full.test "$RBE" all <<EOF
 >> building generic a.test
 >> building generic b.test
 >> building partial.test
@@ -50,7 +50,7 @@ EOF
 echo "a" > 'a.test.txt'
 echo "===========================" > 'the separator.test.txt'
 
-do_test "two unrelated changes" full.test "$RBE" all <<EOF
+lineref do_test "two unrelated changes" full.test "$RBE" all <<EOF
 >> building generic the separator.test
 >> building generic a.test
 >> building partial.test
@@ -60,7 +60,7 @@ EOF
 
 mv _alt_a.test.txt alt_a.test.txt
 
-do_test "creation of an optional source" full.test "$RBE" all <<EOF
+lineref do_test "creation of an optional source" full.test "$RBE" all <<EOF
 >> building alt.test (alt)
 >> building full.test
 >> building all
@@ -68,7 +68,7 @@ EOF
 
 echo "xxx" >> alt_a.test.txt
 
-do_test "change in a optional source" full.test "$RBE" all <<EOF
+lineref do_test "change in a optional source" full.test "$RBE" all <<EOF
 >> building alt.test (alt)
 >> building full.test
 >> building all
@@ -76,19 +76,19 @@ EOF
 
 echo "xxx" >> alt_b.test.txt
 
-do_test "change in a source masked by another optional one" full.test "$RBE" all <<EOF
+lineref do_test "change in a source masked by another optional one" full.test "$RBE" all <<EOF
 >> building all
 EOF
 
 mv alt_a.test.txt _alt_a.test.txt
 
-do_test "remove of an optional source" full.test "$RBE" all <<EOF
+lineref do_test "remove of an optional source" full.test "$RBE" all <<EOF
 >> building alt.test
 >> building full.test
 >> building all
 EOF
 
-do_test "dumb fallback" full.test $DUMBBUILD all <<EOF
+lineref do_test "dumb fallback" full.test $DUMBBUILD all <<EOF
 >> building generic the separator.test
 >> building generic a.test
 >> building generic b.test
@@ -98,10 +98,10 @@ do_test "dumb fallback" full.test $DUMBBUILD all <<EOF
 >> building all
 EOF
 
-do_test "cycle" full.test "$RBE" cycle <<EOF
+lineref do_test "cycle" full.test "$RBE" cycle <<EOF
 EOF
 
-do_test "cycle" full.test "$RBE" cycle_c <<EOF
+lineref do_test "cycle" full.test "$RBE" cycle_c <<EOF
 >> cycle_g done
 >> cycle_h done
 EOF
@@ -111,7 +111,7 @@ EOF
 # ---------------------------------------------------------------------------------
 
 die(){
-  echo "$@"
+  echo "runtest stop - last check at line $line - $@"
   exit 13
 }
 
@@ -126,7 +126,7 @@ test_setup(){
   mkdir -p test.run
   cd test.run
 
-  cp ../test/* ./
+  cp -fR ../test/* ./
 
   if [ "$RBE" != "" ] ; then
     DUMBBUILD="./build.cmd"
@@ -137,7 +137,7 @@ test_setup(){
     DUMBBUILD="./build.cmd"
     export RBE="./rebuild"
 
-    # WINDOES test
+    # # WINDOWS test
     # gcc -std=c99 -Wall -D_WIN32 -o rebuild ../rebuild.c
     # mv build.cmd build.sh
     # mv build.bat build.cmd
@@ -150,14 +150,25 @@ test_setup(){
   set -x
 }
 
-count=0
-_do_test_(){
+line=0
+_lineref_(){
   set +e
   set +x
-  info="$1 - $2"
-  output="$3"
-  cmd="$4"
-  shift 4
+  line="$1"
+  shift
+  set -e
+  set -x
+  "$@"
+}
+
+count=0
+do_test(){
+  set +e
+  set +x
+  info="$1"
+  output="$2"
+  cmd="$3"
+  shift 3
   if [ "$count" = 0 ] ; then
     rm -f test_*.out diff_*.left diff_*.right diff_*.out
   fi
@@ -171,7 +182,7 @@ _do_test_(){
   cat test_"$count".out | grep '^>>' | tr -d '\r' > diff_"$count".left
   diff diff_"$count".left diff_"$count".right | tee diff_"$count".out
   difout="$(cat "diff_$count.out")"
-  [ "$?" = 0 ] && [ "$difout" = "" ] || die "test $count failed: $info"
+  [ "$?" = 0 ] && [ "$difout" = "" ] || die "test n.$count '$info' FAILED"
   set -e
   set -x
 }
