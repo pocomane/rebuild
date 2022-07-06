@@ -85,6 +85,25 @@ case "$TARGET" in
     fi
   ;;
 
+  "failing_return" )
+    "$REBUILD" ifchange fail_ret
+    echo ">> building failing_return"
+  ;;
+
+  "fail_ret" )
+    "$REBUILD" ifchange fail_a good
+    echo ">> building failing_ret"
+  ;;
+
+  "fail_a" )
+    echo ">> building fail_a"
+    exit 13
+  ;;
+
+  "good" )
+    echo ">> building good"
+  ;;
+
   "subfolder.test" )
     "$REBUILD" ifchange subfolder/x.test subfolder/y.test
     echo ">> building subfolder.test"

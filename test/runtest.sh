@@ -27,6 +27,11 @@ lineref do_test "removed a full branch of the graph" "$RBE" all <<EOF
 >> building all
 EOF
 
+lineref do_test "failing target by return vaule" "$RBE" failing_return <<EOF
+>> building fail_a
+>> building good
+EOF
+
 echo "---------------------------" > 'the separator.test.txt'
 
 lineref do_test "change deep in the graph" "$RBE" all <<EOF
@@ -135,28 +140,13 @@ test_setup(){
   mkdir -p test.run
   cd test.run
 
-  cp -fR ../test/* ./
-
-  if [ "$RBE" != "" ] ; then
-    DUMBBUILD="./build.cmd"
-  else
-
-    # POSIX test
-    gcc -std=c99 -Wall -D_POSIX_C_SOURCE=200809L -o rebuild ../rebuild.c
-    DUMBBUILD="./build.cmd"
-    export RBE="./rebuild"
-
-    # # WINDOWS test
-    # gcc -std=c99 -Wall -D_WIN32 -o rebuild ../rebuild.c
-    # mv build.cmd build.sh
-    # mv build.bat build.cmd
-    # DUMBBUILD="./build.sh"
-    # export RBE="./rebuild.exe"
-  fi
-  chmod ugo+x ./build.cmd
-  chmod ugo+x "$DUMBBUILD"
-
   mkdir -p subfolder
+
+  cp ../test/* ./
+  cp ../test/* ./subproject
+  chmod ugo+x ./build.cmd
+  chmod ugo+x ./build.def
+
   cat > the\ separator.test.txt <<EOF
 ===========================
 EOF
@@ -176,8 +166,26 @@ EOF
 x
 EOF
   cat > subfolder/y.test.txt <<EOF
-x
+y
 EOF
+
+  # POSIX test
+  if [ "$RBE" = "" ] ; then
+    gcc -std=c99 -Wall -D_POSIX_C_SOURCE=200809L -o rebuild ../rebuild.c
+  fi
+  DUMBBUILD="./build.cmd"
+  export RBE="./rebuild"
+
+  # # WINDOWS test
+  # if [ "$RBE" = "" ] ; then
+  #   gcc -std=c99 -Wall -D_WIN32 -o rebuild ../rebuild.c
+  # fi
+  # mv build.cmd build.sh
+  # mv build.bat build.cmd
+  # mv subproject/build.cmd subproject/build.sh
+  # mv subproject/build.bat subproject/build.cmd
+  # DUMBBUILD="./build.sh"
+  # export RBE="./rebuild.exe"
 
   set -x
 }
