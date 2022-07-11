@@ -120,6 +120,29 @@ EOF
 lineref check_in_db ./ subfolder/x.test
 lineref check_no_db ./subfolder
 
+lineref do_test "subproject" "$RBE" subproject.test <<EOF
+>> building generic z.sub (sub)
+>> building x.sub (sub)
+>> building generic y.sub (sub)
+>> building full.sub (sub)
+>> building subproject.test
+EOF
+lineref check_in_db ./ subproject/x.sub
+lineref check_no_db ./subproject
+
+rm subproject/*.sub
+
+cd subproject
+lineref do_test "subproject" ../"$RBE" all <<EOF
+>> building generic z.sub (sub)
+>> building x.sub (sub)
+>> building generic y.sub (sub)
+>> building full.sub (sub)
+>> building all (sub)
+EOF
+lineref check_in_db ./ x.sub
+cd -
+
 }
 
 # ---------------------------------------------------------------------------------
@@ -142,10 +165,9 @@ test_setup(){
 
   mkdir -p subfolder
 
-  cp ../test/* ./
-  cp ../test/* ./subproject
+  cp -fR ../test/* ./
   chmod ugo+x ./build.cmd
-  chmod ugo+x ./build.def
+  chmod ugo+x subproject/build.cmd
 
   cat > the\ separator.test.txt <<EOF
 ===========================
@@ -168,6 +190,15 @@ EOF
   cat > subfolder/y.test.txt <<EOF
 y
 EOF
+  cat > subproject/x.sub.txt <<EOF
+sub x
+EOF
+  cat > subproject/y.sub.txt <<EOF
+sub y
+EOF
+  cat > subproject/z.sub.txt <<EOF
+sub z
+EOF
 
   # POSIX test
   if [ "$RBE" = "" ] ; then
@@ -188,6 +219,7 @@ EOF
   # export RBE="./rebuild.exe"
 
   set -x
+  set -e
 }
 
 line=0
@@ -242,7 +274,6 @@ check_in_db(){
   _get_db_path_ "$1" "$2"
   if [ \! -f "$DBPATH" ]; then
     die "db not found for $@"
-    exit 13
   fi
   return 0
 }
@@ -251,7 +282,6 @@ check_no_db(){
   _get_db_path_ "$1"
   if [ -e "$DBPATH" ]; then
     die "unexpected db found in $@"
-    exit 13
   fi
   return 0
 }

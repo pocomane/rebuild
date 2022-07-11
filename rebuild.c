@@ -40,6 +40,8 @@ struct {
   char* rebuild;
   char* database;
   char* builder;
+  char* prefix;
+  char* default_target;
   char* parent_target;
   char* nesting;
   char* sequence;
@@ -94,7 +96,10 @@ static int make_parent_directory(const char* path){
   return 0;
 }
 
-#define DB_PATH(C,T,L) STACKF(C, "%s/%s%s", opt.database, T, \
+#define TARGET_PREFIX(T) ((T) == opt.parent_target ? "" : opt.prefix)
+#define FINAL_PATH(P, T) STACKF(P, "%s%s", TARGET_PREFIX(T), T)
+
+#define DB_PATH(C,T,L) STACKF(C, "%s/%s%s%s", opt.database, TARGET_PREFIX(T), T, \
   ((L) == 0 ? "_dep.txt" : (L) == 1 ? "_dep.txt.wip" : "_dep.txt.wip.wip"))
 
 static int db_clear(const char* target){
@@ -136,26 +141,28 @@ static FILE* db_open(const char* target, int level, const char* mode, int report
 
 #undef DB_PATH
 
-static int is_source_file(const char * path){
+static int is_source_file(const char * target){
+  FINAL_PATH(char* path, target);
   if (!file_exists(path)) return 0;
-  if (is_in_db(path, 0)) return 0;
+  if (is_in_db(target, 0)) return 0;
   return 1;
 }
 
 static void check_dependency_cycle(const char* target){
+  FINAL_PATH(char* target_path, target);
   int is_cycle = 0;
   char* l = (char*) opt.sequence;
   for (char* s = l; !is_cycle && '\0' != *s; s +=1){
     if ('\n' == *s){
       if (l != s && '\0' != *l){
         *s = '\0';
-        if (!strcmp(l, target)) is_cycle = 1;
+        if (!strcmp(l, target_path)) is_cycle = 1;
         *s = '\n';
       }
       l = s + 1;
     }
   }
-  if (is_cycle) die("target '%s' generates a dependency cycle.\n", target);
+  if (is_cycle) die("target '%s' generates a dependency cycle.\n", target_path);
 }
 
 static int run_child_or_die(const char* cmd){
@@ -242,16 +249,17 @@ err:
 }
 
 static int store_create_dependence(const char* dependency){
-  if (file_exists(dependency)) die("unexpected error %d\n", __LINE__); // TODO : is this needed ?
+  FINAL_PATH(char* dep_path, dependency);
+  if (file_exists(dep_path)) die("unexpected error %d\n", __LINE__); // TODO : is this needed ?
   FILE * dep = db_open(opt.parent_target, 1, "a+b", 1);
-  if (NULL == dep) die("can not store creation dependency for '%s'.\n", dependency);
+  if (NULL == dep) die("can not store creation dependency for '%s'.\n", dep_path);
   fseek(dep, 0, SEEK_SET);
   int found = 0;
   char * rp;
   while (!found && get_line_from_file(line_buffer, sizeof(line_buffer), dep))
     if (CREATE_DEP == parse_dependency_line(line_buffer, &rp, NULL, NULL))
-      found = !strcmp(rp, dependency);
-  if (!found) fprintf(dep, "%s\n", format_dependency_line(CREATE_DEP, HASH_EMPTY, TIME_EMPTY, dependency));
+      found = !strcmp(rp, dep_path);
+  if (!found) fprintf(dep, "%s\n", format_dependency_line(CREATE_DEP, HASH_EMPTY, TIME_EMPTY, dep_path));
   fclose(dep);
   return 0;
 }
@@ -305,10 +313,11 @@ static int did_file_change(char* path, char* time, char* hash){
 }
 
 static int rebuild_target_if_needed(const char* target){
+  FINAL_PATH(char* target_path, target);
   // TODO : REFACTOR !
-  info(1, "for '%s' checking prerequisites of '%s'.\n", opt.parent_target, target);
+  info(1, "for '%s' checking prerequisites of '%s'.\n", opt.parent_target, target_path);
   int should_be_rebuilt = 0;
-  if (!file_exists(target)) should_be_rebuilt = 5;
+  if (!file_exists(target_path)) should_be_rebuilt = 5;
   FILE * file = db_open(target, 0, "rb", 0);
   if (NULL != file){
     size_t len = 0;
@@ -364,11 +373,12 @@ static int rebuild_target_if_needed(const char* target){
 }
 
 static int store_change_dependence(const char * dependency){
+  FINAL_PATH(char* dep_path, dependency);
   char * when = TIME_EMPTY;
   char * hash = HASH_EMPTY;
-  if (file_exists(dependency)){
-    when = get_timestamp(dependency);
-    hash = get_hash(dependency);
+  if (file_exists(dep_path)){
+    when = get_timestamp(dep_path);
+    hash = get_hash(dep_path);
   }
   FILE * in = db_open(opt.parent_target, 1, "rb", 0);
   FILE * out = db_open(opt.parent_target, 2, "wb", 1);
@@ -378,11 +388,11 @@ static int store_change_dependence(const char * dependency){
     while (get_line_from_file(line_buffer, sizeof(line_buffer), in)) {
       char * rp;
       if (CHANGE_DEP == parse_dependency_line(line_buffer, &rp, NULL, NULL))
-        if (strcmp(rp, dependency)) fprintf(out, "%s\n", line_buffer);
+        if (strcmp(rp, dep_path)) fprintf(out, "%s\n", line_buffer);
     }
     fclose(in);
   }
-  char* content = format_dependency_line(CHANGE_DEP, hash, when, dependency);
+  char* content = format_dependency_line(CHANGE_DEP, hash, when, dep_path);
   fprintf(out, "%s\n", content);
   info(7, "dependency stored [%s] (wip.wip) <- [%s].\n", opt.parent_target, content);
   fclose(out);
@@ -403,7 +413,7 @@ static int rebuild_if_change(char* target){
 
 int cli_main(int argc, char *argv[]) {
   int result = 0;
-  char* deftar = opt.parent_target;
+  char* deftar = opt.default_target;
   if (!strcmp(deftar,"")) deftar = "all";
   if (argc < 2){
 	  result = rebuild_target(deftar);
@@ -450,6 +460,7 @@ int cli_main(int argc, char *argv[]) {
 #define ENVAR_BUILDER "REBUILD_BUILDER"
 #define ENVAR_SEQUENCE "REBUILD_SEQUENCE"
 #define ENVAR_DATABASE "REBUILD_DATABASE"
+#define ENVAR_PREFIX "REBUILD_PREFIX"
 
 static int print_help(char* cmd){
   printf("REcursive BUILD system - rebuild 0.0.1\n");
@@ -473,21 +484,25 @@ static int print_help(char* cmd){
          ENVAR_VERBOSITY);
   printf("\n");
   printf("The following variables are automatically set by the rebuild system:\n");
-  printf("%s\n%s\n%s\n%s\n%s\n", ENVAR_REBUILD, ENVAR_DATABASE, ENVAR_TARGET,
-         ENVAR_OUTPUT, ENVAR_SEQUENCE);
+  printf("%s\n%s\n%s\n%s\n%s\n%s\n", ENVAR_REBUILD, ENVAR_DATABASE, ENVAR_TARGET,
+         ENVAR_OUTPUT, ENVAR_SEQUENCE, ENVAR_PREFIX); // ENVAR_TARGET is used too
   return 0;
 }
 
 static char * environment_with_default(const char* varname, char* fallback){
   char * result = getenv(varname);
-  return result ? result : fallback;
+  return result && '\0' != result[0] ? result : fallback;
 }
 
 static int set_environment_for_subprocess(const char* target){
+  set_environment_variable(ENVAR_DATABASE, opt.database);
+  set_environment_variable(ENVAR_PREFIX, opt.prefix);
   set_environment_variable(ENVAR_TARGET, target);
   set_environment_variable(ENVAR_OUTPUT, opt.outpath);
   set_environment_variable(ENVAR_REBUILD, opt.rebuild);
-  STACKF(char* seq, "%s%s\n", opt.sequence, target);
+  set_environment_variable(ENVAR_BUILDER, opt.builder);
+  FINAL_PATH(char* target_path, target);
+  STACKF(char* seq, "%s%s\n", opt.sequence, target_path);
   set_environment_variable(ENVAR_SEQUENCE, seq);
   return 0;
 }
@@ -500,13 +515,13 @@ int env_main(int argc, char *argv[]) {
 
   opt.rebuild = get_process_binary(argc, argv);
 
-  opt.database = environment_with_default(ENVAR_DATABASE, ".rebuild");
+  opt.database = environment_with_default(ENVAR_DATABASE, "./.rebuild");
   STACKF(opt.database, "%s%s", NEED_PREF(opt.database), opt.database);
 
-  opt.builder = environment_with_default(ENVAR_BUILDER, "build.cmd");
+  opt.builder = environment_with_default(ENVAR_BUILDER, "./build.cmd");
   STACKF(opt.builder, "%s%s", NEED_PREF(opt.builder), opt.builder);
   
-  STACKF(opt.outpath, "%s.rebuild/target.wip", cd);
+  STACKF(opt.outpath, "%s/target.wip", opt.database);
 
   opt.sequence = environment_with_default(ENVAR_SEQUENCE, "");
   STACKF(opt.sequence, "%s", opt.sequence);
@@ -526,6 +541,12 @@ int env_main(int argc, char *argv[]) {
   STACKF(opt.parent_target, "%s", opt.parent_target);
   if ('\0' != opt.parent_target[0])
     opt.parent_target[strlen(opt.parent_target)-1]='\0';
+
+  opt.default_target = environment_with_default(ENVAR_TARGET, "");
+  STACKF(opt.default_target, "%s", opt.default_target);
+
+  opt.prefix = environment_with_default(ENVAR_PREFIX, "");
+  STACKF(opt.prefix, "%s", opt.prefix);
 
   char nestr[nesting+2];
   memset(nestr, '-', nesting+1);
