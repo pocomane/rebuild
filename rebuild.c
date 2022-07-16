@@ -45,7 +45,6 @@ struct {
   char* parent_target;
   char* nesting;
   char* sequence;
-  char* outpath;
   int check_time;
   int check_hash;
   int verbosity;
@@ -101,6 +100,22 @@ static int make_parent_directory(const char* path){
 
 #define DB_PATH(C,T,L) STACKF(C, "%s/%s%s%s", opt.database, TARGET_PREFIX(T), T, \
   ((L) == 0 ? "_dep.txt" : (L) == 1 ? "_dep.txt.wip" : "_dep.txt.wip.wip"))
+
+#define DB_MARK_PATH(C,T) STACKF(C, "%s/%s%s%s", opt.database, TARGET_PREFIX(T), T, "_outofdate.txt")
+
+static void db_mark_rebuild(const char* target, int to_rebuild){
+  DB_MARK_PATH(char* path, target);
+  if (!to_rebuild) remove(path);
+  else {
+    FILE* f = fopen(path, "wb");
+    if (f) fclose(f);
+  }
+}
+
+static int db_should_rebuild(const char* target){
+  DB_MARK_PATH(char* path, target);
+  return file_exists(path);
+}
 
 static int db_clear(const char* target){
   char* path;
@@ -178,16 +193,17 @@ static int rebuild_target(char* target){
   db_clear(target);
   if (!is_file_executable(opt.builder))
     die("invalid builder '%s'.\n", opt.builder);
-  remove(opt.outpath);
   info(1, "running builder script for %s.\n", target);
   //check_dependency_cycle(target);
+  db_mark_rebuild(target, 1); // OPT 1
   set_environment_for_subprocess(target);
-  if (0 != run_child_or_die(opt.builder)){
-    remove(opt.outpath);
-    result = -1;
+  if (0 == run_child_or_die(opt.builder)){
+    db_mark_rebuild(target, 0); // OPT 1
   } else {
-    if (file_exists(opt.outpath))
-      move_file(opt.outpath, target);
+    result = -1;
+    //remove(target); // OPT 2 - This should suffice to handle failing build instead
+    //                // of the mark 1/0 system; however some issue can arise if
+    //                // the removing fails (very unlikely).
   }
   if (!is_in_db(target, 1)) db_clear(target);
   else db_commit(target, 0, 0);
@@ -317,6 +333,7 @@ static int rebuild_target_if_needed(const char* target){
   // TODO : REFACTOR !
   info(1, "for '%s' checking prerequisites of '%s'.\n", opt.parent_target, target_path);
   int should_be_rebuilt = 0;
+  if (db_should_rebuild(target_path)) should_be_rebuilt = 6;
   if (!file_exists(target_path)) should_be_rebuilt = 5;
   FILE * file = db_open(target, 0, "rb", 0);
   if (NULL != file){
@@ -498,7 +515,7 @@ static int set_environment_for_subprocess(const char* target){
   set_environment_variable(ENVAR_DATABASE, opt.database);
   set_environment_variable(ENVAR_PREFIX, opt.prefix);
   set_environment_variable(ENVAR_TARGET, target);
-  set_environment_variable(ENVAR_OUTPUT, opt.outpath);
+  set_environment_variable(ENVAR_OUTPUT, target); // TODO : remove ? use ENVAR_TARGET instad ?
   set_environment_variable(ENVAR_REBUILD, opt.rebuild);
   set_environment_variable(ENVAR_BUILDER, opt.builder);
   FINAL_PATH(char* target_path, target);
@@ -521,8 +538,6 @@ int env_main(int argc, char *argv[]) {
   opt.builder = environment_with_default(ENVAR_BUILDER, "./build.cmd");
   STACKF(opt.builder, "%s%s", NEED_PREF(opt.builder), opt.builder);
   
-  STACKF(opt.outpath, "%s/target.wip", opt.database);
-
   opt.sequence = environment_with_default(ENVAR_SEQUENCE, "");
   STACKF(opt.sequence, "%s", opt.sequence);
 
