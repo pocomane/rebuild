@@ -100,8 +100,26 @@ case "$TARGET" in
     exit 13
   ;;
 
+  "out_and_fail" )
+    "$REBUILD" ifchange out_and_fail_slave
+    echo ">> building out_and_fail"
+  ;;
+
+  "out_and_fail_slave" )
+    "$REBUILD" ifchange good_x
+    echo ">> building out_and_fail_slave"
+    echo "ok" > "$OUTPUT"
+    exit 13
+  ;;
+
+  "good_x" )
+    echo ">> building good_x"
+    echo "ok" > "$OUTPUT"
+  ;;
+
   "good" )
     echo ">> building good"
+    echo "ok" > "$OUTPUT"
   ;;
 
   "subfolder.test" )

@@ -32,6 +32,15 @@ lineref do_test "failing target by return vaule" "$RBE" failing_return <<EOF
 >> building good
 EOF
 
+lineref do_test "failing target with output" "$RBE" out_and_fail <<EOF
+>> building good_x
+>> building out_and_fail_slave
+EOF
+
+lineref do_test "failing target with output again" "$RBE" out_and_fail <<EOF
+>> building out_and_fail_slave
+EOF
+
 echo "---------------------------" > 'the separator.test.txt'
 
 lineref do_test "change deep in the graph" "$RBE" all <<EOF
