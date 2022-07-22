@@ -611,20 +611,24 @@ static int set_environment_variable(const char* key, const char* value){
 }
 
 static int run_child(const char * cmd){
+#define WRONG_EXE (113)
   pid_t pid = fork();
   if (pid < 0) return ERROR_PROCESS_EXECUTION;
   if (!pid){
     // child - never return
     execl(cmd, cmd, (char *)0);
+    exit(WRONG_EXE);
   } else {
     // parent
     int status;
     if (-1 == waitpid(pid, &status, 0)) return ERROR_PROCESS_EXECUTION;
     int result = 0;
     if (WIFEXITED(status)) result = WEXITSTATUS(status);
+    if (result == WRONG_EXE) return ERROR_PROCESS_EXECUTION;
     return result;
   }
-  return 0;
+  return 0; // never reached
+#undef WRONG_EXE
 }
 
 static int make_directory(const char * path){
