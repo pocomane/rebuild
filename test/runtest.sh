@@ -121,8 +121,8 @@ lineref do_test "cycle" "$RBE" cycle_c <<EOF
 EOF
 
 lineref do_test "sources in subfolder" "$RBE" subfolder.test <<EOF
->> building generic subfolder/x.test
->> building generic subfolder/y.test
+>> building subfolder generic subfolder/x.test
+>> building subfolder generic subfolder/y.test
 >> building subfolder.test
 EOF
 
@@ -142,7 +142,7 @@ lineref check_no_db ./subproject
 rm subproject/*.sub
 
 cd subproject
-lineref do_test "subproject" ../"$RBE" all <<EOF
+lineref do_test "subproject" "$RBE" all <<EOF
 >> building generic z.sub (sub)
 >> building x.sub (sub)
 >> building generic y.sub (sub)
@@ -214,7 +214,7 @@ EOF
     gcc -std=c99 -Wall -D_POSIX_C_SOURCE=200809L -o rebuild ../rebuild.c
   fi
   DUMBBUILD="./build.cmd"
-  export RBE="./rebuild"
+  export RBE="$PWD/rebuild"
 
   # # WINDOWS test
   # if [ "$RBE" = "" ] ; then
@@ -225,7 +225,7 @@ EOF
   # mv subproject/build.cmd subproject/build.sh
   # mv subproject/build.bat subproject/build.cmd
   # DUMBBUILD="./build.sh"
-  # export RBE="./rebuild.exe"
+  # export RBE="$PWD/rebuild.exe"
 
   set -x
   set -e
