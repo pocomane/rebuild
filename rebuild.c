@@ -42,7 +42,7 @@ struct {
   char* builder;
   char* prefix;
   char* default_target;
-  char* parent_target;
+  char* parent_target; // TODO : rename to something like parent_target_path ?
   char* nesting;
   char* sequence;
   int check_time;
@@ -69,7 +69,7 @@ static char line_buffer[PATHSIZE +16 +8 +2 +4 +1]; // path:PATHSIZE timestamp:16
 static char* get_current_directory();
 static char* get_process_binary(int argc, char* argv[]);
 static int set_environment_variable(const char* key, const char* value);
-static int run_child(const char * cmd);
+static int run_child(const char * wd, const char * cmd);
 static int make_directory(const char * path);
 static int file_exists(const char * name);
 static int is_file_executable(const char * path);
@@ -77,7 +77,7 @@ static int move_file(const char * from, const char * to);
 static char* get_modification_time(const char* path);
 
 // in the cli section
-static int set_environment_for_subprocess(const char* target);
+static int set_environment_for_subprocess(const char* base_target);
 
 static int make_parent_directory(const char* path){
   char * sep = (char *) path;
@@ -95,8 +95,9 @@ static int make_parent_directory(const char* path){
   return 0;
 }
 
+// TODO : remove (or make clearer) the special case for opt.parent_target !
 #define TARGET_PREFIX(T) ((T) == opt.parent_target ? "" : opt.prefix)
-#define FINAL_PATH(P, T) STACKF(P, "%s%s", TARGET_PREFIX(T), T)
+#define FINAL_PATH(P, T) STACKF(P, "%s%s", TARGET_PREFIX(T), T) // TODO : rename to TARGET_PATH
 
 #define DB_PATH(C,T,L) STACKF(C, "%s/%s%s%s", opt.database, TARGET_PREFIX(T), T, \
   ((L) == 0 ? "_dep.txt" : (L) == 1 ? "_dep.txt.wip" : "_dep.txt.wip.wip"))
@@ -180,8 +181,35 @@ static void check_dependency_cycle(const char* target){
   if (is_cycle) die("target '%s' generates a dependency cycle.\n", target_path);
 }
 
-static int run_child_or_die(const char* cmd){
-  int result = run_child(cmd);
+static int run_child_or_die(const char* target, const char* cmd){
+
+  STACKF(char *wd, "%s", target);
+  char *s = strrchr(wd, '/');
+  if (NULL != s) *s++ = '\0';
+  else wd = "." ;
+
+  char *base_target = s;
+  if (NULL == s) base_target = (char*) target;
+
+  STACKF(char* new_prefix, "%s%s%s/", opt.prefix, opt.prefix[0] == '\0' ? "" : "/", wd);
+  if (NULL == s) new_prefix = opt.prefix;
+
+  FINAL_PATH(char* target_path, target);
+
+  STACKF(char* new_sequence, "%s%s\n", opt.sequence, target_path);
+
+  char *old_prefix = opt.prefix;
+  char *old_sequence = opt.sequence;
+  opt.prefix = new_prefix;
+  opt.sequence = new_sequence;
+
+  set_environment_for_subprocess(base_target);
+
+  opt.prefix = old_prefix;
+  opt.sequence = old_sequence;
+
+  info(5,"calling '%s' in folder '%s' with target '%s'\n", cmd, wd, s);
+  int result = run_child(wd, cmd);
   if (ERROR_PROCESS_EXECUTION == result)
     die("can not create sub-process - %s.\n", cmd);
   return result;
@@ -196,8 +224,7 @@ static int rebuild_target(char* target){
   info(1, "running builder script for %s.\n", target);
   //check_dependency_cycle(target);
   db_mark_rebuild(target, 1); // OPT 1
-  set_environment_for_subprocess(target);
-  if (0 == run_child_or_die(opt.builder)){
+  if (0 == run_child_or_die(target, opt.builder)){
     db_mark_rebuild(target, 0); // OPT 1
   } else {
     result = -1;
@@ -383,8 +410,7 @@ static int rebuild_target_if_needed(const char* target){
   else info(1, "'%s' should be rebuilt (%d).\n", target, should_be_rebuilt); // TODO : proper explanation
   if (should_be_rebuilt) {
     check_dependency_cycle(target);
-    set_environment_for_subprocess(target);
-    return run_child_or_die(opt.rebuild);
+    return run_child_or_die(target, opt.rebuild);
   }
   return 0;
 }
@@ -511,16 +537,14 @@ static char * environment_with_default(const char* varname, char* fallback){
   return result && '\0' != result[0] ? result : fallback;
 }
 
-static int set_environment_for_subprocess(const char* target){
+static int set_environment_for_subprocess(const char* base_target){
   set_environment_variable(ENVAR_DATABASE, opt.database);
   set_environment_variable(ENVAR_PREFIX, opt.prefix);
-  set_environment_variable(ENVAR_TARGET, target);
-  set_environment_variable(ENVAR_OUTPUT, target); // TODO : remove ? use ENVAR_TARGET instad ?
+  set_environment_variable(ENVAR_TARGET, base_target);
+  set_environment_variable(ENVAR_OUTPUT, base_target); // TODO : remove, use ENVAR_TARGET only
   set_environment_variable(ENVAR_REBUILD, opt.rebuild);
   set_environment_variable(ENVAR_BUILDER, opt.builder);
-  FINAL_PATH(char* target_path, target);
-  STACKF(char* seq, "%s%s\n", opt.sequence, target_path);
-  set_environment_variable(ENVAR_SEQUENCE, seq);
+  set_environment_variable(ENVAR_SEQUENCE, opt.sequence);
   return 0;
 }
 
@@ -610,12 +634,13 @@ static int set_environment_variable(const char* key, const char* value){
   return setenv(key, value, 1);
 }
 
-static int run_child(const char * cmd){
+static int run_child(const char* wd, const char * cmd){
 #define WRONG_EXE (113)
   pid_t pid = fork();
   if (pid < 0) return ERROR_PROCESS_EXECUTION;
   if (!pid){
     // child - never return
+    chdir(wd);
     execl(cmd, cmd, (char *)0);
     exit(WRONG_EXE);
   } else {
@@ -684,19 +709,26 @@ static int set_environment_variable(const char* key, const char* value){
   return 0;
 }
 
-static int run_child(const char * cmd){
+static int run_child(const char* wd, const char * cmd){
   STARTUPINFOW si;
   PROCESS_INFORMATION pi;
   ZeroMemory( &si, sizeof(si) );
   si.cb = sizeof(si);
   ZeroMemory( &pi, sizeof(pi) );
+
+  TCHAR cd[PATHSIZE];
+  if(!GetCurrentDirectory(sizeof(cd), cd)) return -1;
+  STACKF(char *newdir, "%s/%s", cd, wd);
+
   char *p=cmd;
   for (char*p=cmd;*p!='\0';p++)if(*p=='/')*p='\\';
   STACKF(char* cmlin, "c:\\Windows\\System32\\cmd.exe /C \"%s\"", cmd); // TODO : FIX THIS: correct quoting !
   CPTRW(WCHAR* cmlinW, cmlin);
+
   if(!CreateProcessW(NULL, cmlinW,
-                     NULL, NULL, FALSE, 0, NULL, NULL, &si,  &pi)
+                     NULL, NULL, FALSE, 0, NULL, newdir, &si,  &pi)
   ) return ERROR_PROCESS_EXECUTION;
+
   WaitForSingleObject( pi.hProcess, INFINITE );
   DWORD exit_code;
   if (FALSE == GetExitCodeProcess(pi.hProcess, &exit_code)) exit_code = -1;

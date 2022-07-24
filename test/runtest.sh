@@ -121,12 +121,13 @@ lineref do_test "cycle" "$RBE" cycle_c <<EOF
 EOF
 
 lineref do_test "sources in subfolder" "$RBE" subfolder.test <<EOF
->> building subfolder generic subfolder/x.test
->> building subfolder generic subfolder/y.test
+>> building subfolder generic x.test
+>> building subfolder generic y.test
 >> building subfolder.test
 EOF
 
 lineref check_in_db ./ subfolder/x.test
+lineref check_in_db ./ subfolder.test
 lineref check_no_db ./subfolder
 
 lineref do_test "subproject" "$RBE" subproject.test <<EOF
@@ -137,6 +138,7 @@ lineref do_test "subproject" "$RBE" subproject.test <<EOF
 >> building subproject.test
 EOF
 lineref check_in_db ./ subproject/x.sub
+lineref check_in_db ./ subproject/full.sub
 lineref check_no_db ./subproject
 
 rm subproject/*.sub
@@ -150,6 +152,7 @@ lineref do_test "subproject" "$RBE" all <<EOF
 >> building all (sub)
 EOF
 lineref check_in_db ./ x.sub
+lineref check_in_db ./ full.sub
 cd -
 
 }
@@ -233,19 +236,17 @@ EOF
 
 line=0
 _lineref_(){
+  { set +x ; } 2>/dev/null
   set +e
-  set +x
   line="$1"
   shift
+  "$@"
   set -e
   set -x
-  "$@"
 }
 
 count=0
 do_test(){
-  set +e
-  set +x
   info="$1"
   cmd="$2"
   shift 2
@@ -263,8 +264,6 @@ do_test(){
   diff diff_"$count".left diff_"$count".right | tee diff_"$count".out
   difout="$(cat "diff_$count.out")"
   [ "$?" = 0 ] && [ "$difout" = "" ] || die "test n.$count '$info' FAILED"
-  set -e
-  set -x
 }
 
 test_end(){

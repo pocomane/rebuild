@@ -130,17 +130,15 @@ case "$TARGET" in
 
   "subproject.test" )
     # TODO : find clean way to launch sub-project build
-    cd subproject
-    REBUILD_BUILDER="" REBUILD_PREFIX="${REBUILD_PREFIX}subproject/" "$REBUILD" ifchange full.sub
-    cd -
+    REBUILD_BUILDER="$PWD/subproject/build.cmd" "$REBUILD" ifchange subproject/full.sub
     echo ">> building subproject.test"
     cat subproject/full.sub > "$OUTPUT"
   ;;
 
   *".test" )
-    case "$TARGET" in
+    case "$REBUILD_PREFIX" in
       *"subfolder"* )
-        source="$TARGET.txt"
+        source="$OUTPUT.txt"
         "$REBUILD" ifchange "$source"
         echo ">> building subfolder generic $TARGET"
         cat "$source" > "$OUTPUT"

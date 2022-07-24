@@ -2,7 +2,7 @@
 #!./busybox sh
 
 set -e
-case "$TARGET" in
+case "$OUTPUT" in
 
   all )
     "$REBUILD" ifchange full.sub
