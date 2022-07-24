@@ -205,6 +205,104 @@ but using it in `rebuild` could be still quite difficult to use, sice normally
 the build utilities do not handle such cases; for example `gcc -M` generate the
 dependency of a `.c` files, but it does not emit the the optional one.
 
+# Target folders
+
+The target system is strictly linked to the file tree structure. In fact, when
+a target contains one or more '/' chars, only the part after the last '/' is
+considered to be the target name, i.e. it will be exported in the `TARGET` variable.
+The rest will be considered as a subpath in which to move before launching EBS.
+
+For example:
+```
+#!/bin/sh
+set -e
+case "$TARGET" in
+    all )
+        # liking
+        "$REBUILD" ifchange main.o lib_a/a.o lib_b/b.o
+        gcc -o "$OUTPUT" main.o lib_a/a.o lib_b/b.o
+        ;;
+    *.o )
+        # compilation
+        FNAM="$(echo "$TARGET" | sed 's/\.o$//')"
+        "$REBUILD" ifchange "$FNAM.c" $DEPS
+        gcc -o "$OUTPUT" -c "$FNAM".c
+esac
+```
+
+will work in the following way:
+- The compiliation rule will be run in the launching directory for the target `main.o`
+- The compilation rule will be run in the `lib_a` folder for the target `a.o`
+- The compilation rule will be run in the `lib_b` folder for the target `b.o`
+- The linking rule will be run in the launching folder
+
+This let's you to define general rules to be run in every folders, however you
+may want to differentiate the command between subfolder; we suggest to do this
+signaling the condition with an environment variable, instead of analyzing '$PWD':
+```
+#!/bin/sh
+set -e
+case "$TARGET" in
+    all )
+        # liking
+        "$REBUILD" ifchange main.o
+        SUBFOLDER=lib_a "$REBUILD" ifchange lib_a/a.o
+        SUBFOLDER=lib_b "$REBUILD" ifchange lib_b/b.o
+        gcc -o "$OUTPUT" main.o lib_a/a.o lib_b/b.o
+        ;;
+    *.o )
+        case "$SUBFOLDER" in
+            "lib_a" )
+              echo "handle subdir lib_a"
+              ;;
+            "lib_b" )
+              echo "handle subdir lib_a"
+              ;;
+            "" )
+              echo "handle standard rule"
+              ;;
+
+... etc ...
+```
+
+Another way is to use another `build.cmd` in the sub-folder:
+```
+#!/bin/sh
+set -e
+case "$TARGET" in
+    all )
+        # liking
+        REBUILD_BUILDER="" "$REBUILD" ifchange lib_a/a.o
+        REBUILD_BUILDER="" "$REBUILD" ifchange lib_b/b.o
+        gcc -o "$OUTPUT" main.o lib_a/a.o lib_b/b.o
+        ;;
+    *.o )
+        # compilation
+        FNAM="$(echo "$TARGET" | sed 's/\.o$//')"
+        "$REBUILD" ifchange "$FNAM.c" $DEPS
+        gcc -o "$OUTPUT" -c "$FNAM".c
+esac
+```
+Note that in `REBUILD_BUILDER` you can also specify the full path for the new
+EBS, but if it is a `build.cmd` file in the new dir, you can just set it blank,
+so `rebuild` will search for the default one in the new directory.
+
+This mechanism can be use also when you have a sub-project built with `rebuild`:
+place it in a subdirectory, and from the parent project just call it with
+```
+REBUILD_BUILDER="" "$REBUILD" ifchange lib_a/a.o
+```
+For what we said, the rebuild system of the sub-project will be correctly
+called; however there is a difference with respect to call `rebuild` manually
+in the sub-directory: `rebuild` will use the same build database of the parent
+project, instead of creating a new one inside the sub-project folder. So
+building from the parent or from the child will result in two indipendent
+built, but the output files will be in the same position.  This can result in
+duplicate work, e.g. the first time you run in the parent and in the child, all
+the targets will be made two times. However this conservative behaviour lets
+`rebuild` to always have a correct build after each run (although the previous
+one could be incomplete).
+
 # Per-target build file
 
 The `build.cmd` can be a simple dispacher, that select the file to be used with
@@ -288,6 +386,10 @@ paths:
   built; the user should NEVER overwrite it, since it is very specific to the
   `rebuild` opertaions.
 
+# The rebuild database
+
+BLA bla // TODO : document it !
+
 # Dumb fallback
 
 A dumb version for the `rebuild` system, that always considers the target
@@ -296,6 +398,7 @@ itself a fallback in case a fully featured `rebuild` is
 not present on the machine. For example, to let the previous EBS to be stand-alone,
 one have just to put at the top:
 ```
+# TODO : do chdir in the target folder !
 if [ -z "$REBUILD" ] ; then
   TARGET="$1"
   REBUILD="rebuild_fallback_"
