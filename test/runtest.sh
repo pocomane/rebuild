@@ -247,6 +247,7 @@ _lineref_(){
 
 count=0
 do_test(){
+  set -x # debug travis build
   info="$1"
   cmd="$2"
   shift 2
@@ -257,6 +258,8 @@ do_test(){
   cat > diff_"$count".right
   echo "..........................................................................."
   echo "-> TEST $count"
+  export REBUILD_VERBOSITY="5" # debug travis build
+  ls -lha "$cmd" # debug travis build
   ("$cmd" "$@" 2>&1 )| tee test_"$count".out
   # ("$cmd" -n "$@" 2>&1 )| tee test_"$count".out
   echo "'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''"
