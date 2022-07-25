@@ -492,6 +492,7 @@ int cli_main(int argc, char *argv[]) {
 // Exported for the builder
 #define ENVAR_REBUILD "REBUILD"
 #define ENVAR_TARGET "TARGET"
+#define ENVAR_DEFAULT_TARGET "REBUILD_DEFAULT_TARGET"
 #define ENVAR_OUTPUT "OUTPUT"
 
 // Rebuild option
@@ -540,6 +541,7 @@ static char * environment_with_default(const char* varname, char* fallback){
 static int set_environment_for_subprocess(const char* base_target){
   set_environment_variable(ENVAR_DATABASE, opt.database);
   set_environment_variable(ENVAR_PREFIX, opt.prefix);
+  set_environment_variable(ENVAR_DEFAULT_TARGET, base_target);
   set_environment_variable(ENVAR_TARGET, base_target);
   set_environment_variable(ENVAR_OUTPUT, base_target); // TODO : remove, use ENVAR_TARGET only
   set_environment_variable(ENVAR_REBUILD, opt.rebuild);
@@ -581,7 +583,7 @@ int env_main(int argc, char *argv[]) {
   if ('\0' != opt.parent_target[0])
     opt.parent_target[strlen(opt.parent_target)-1]='\0';
 
-  opt.default_target = environment_with_default(ENVAR_TARGET, "");
+  opt.default_target = environment_with_default(ENVAR_DEFAULT_TARGET, "");
   STACKF(opt.default_target, "%s", opt.default_target);
 
   opt.prefix = environment_with_default(ENVAR_PREFIX, "");
