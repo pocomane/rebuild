@@ -215,20 +215,20 @@ EOF
   # POSIX test
   if [ "$RBE" = "" ] ; then
     gcc -std=c99 -Wall -D_POSIX_C_SOURCE=200809L -o rebuild ../rebuild.c
+    export RBE="$PWD/rebuild"
   fi
   DUMBBUILD="./build.cmd"
-  export RBE="$PWD/rebuild"
 
   # # WINDOWS test
   # if [ "$RBE" = "" ] ; then
   #   gcc -std=c99 -Wall -D_WIN32 -o rebuild ../rebuild.c
+  #   export RBE="$PWD/rebuild.exe"
   # fi
   # mv build.cmd build.sh
   # mv build.bat build.cmd
   # mv subproject/build.cmd subproject/build.sh
   # mv subproject/build.bat subproject/build.cmd
   # DUMBBUILD="./build.sh"
-  # export RBE="$PWD/rebuild.exe"
 
   set -x
   set -e
