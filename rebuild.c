@@ -699,7 +699,10 @@ static char* get_modification_time(const char* path){
   PTRW = LID(x)
 
 static char* get_current_directory(){
-  return getenv("CD");
+  TCHAR cd[PATHSIZE];
+  if (0>= GetCurrentDirectory(sizeof(cd), cd)) return NULL;
+  STATICF(char* result, PATHSIZE, "%s", cd);
+  return result;
 }
 
 static char* get_process_binary(int argc, char* argv[]){
@@ -721,14 +724,14 @@ static int run_child(const char* wd, const char * cmd){
   TCHAR cd[PATHSIZE];
   if(!GetCurrentDirectory(sizeof(cd), cd)) return -1;
   STACKF(char *newdir, "%s/%s", cd, wd);
+  CPTRW(WCHAR* newdirW, newdir);
 
-  char *p=cmd;
-  for (char*p=cmd;*p!='\0';p++)if(*p=='/')*p='\\';
+  for (char*p=(char*)cmd;*p!='\0';p++)if(*p=='/')*p='\\';
   STACKF(char* cmlin, "c:\\Windows\\System32\\cmd.exe /C \"%s\"", cmd); // TODO : FIX THIS: correct quoting !
   CPTRW(WCHAR* cmlinW, cmlin);
 
   if(!CreateProcessW(NULL, cmlinW,
-                     NULL, NULL, FALSE, 0, NULL, newdir, &si,  &pi)
+                     NULL, NULL, FALSE, 0, NULL, newdirW, &si,  &pi)
   ) return ERROR_PROCESS_EXECUTION;
 
   WaitForSingleObject( pi.hProcess, INFINITE );

@@ -225,9 +225,10 @@ EOF
   #   export RBE="$PWD/rebuild.exe"
   # fi
   # mv build.cmd build.sh
-  # mv build.bat build.cmd
   # mv subproject/build.cmd subproject/build.sh
-  # mv subproject/build.bat subproject/build.cmd
+  # cp ../busybox.exe ./
+  # echo "\"$PWD/busybox\" sh -c \"$PWD/build.sh\"" > build.cmd
+  # echo "\"$PWD/busybox\" sh -c \"$PWD/subproject/build.sh\"" > subproject/build.cmd
   # DUMBBUILD="./build.sh"
 
   set -x
